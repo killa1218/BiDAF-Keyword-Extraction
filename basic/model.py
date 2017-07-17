@@ -88,7 +88,7 @@ class Model(object):
                     Acx = tf.reshape(Acx, [-1, JX, W, dc])
                     Acq = tf.reshape(Acq, [-1, JQ, W, dc])
 
-                    filter_sizes = list(map(int, config.out_channel_dims.split(',')))
+                    filter_sizes = list(map(int, config.out_channel_dims.split(','))) # TODO What?
                     heights = list(map(int, config.filter_heights.split(',')))
                     assert sum(filter_sizes) == dco, (filter_sizes, dco)
                     with tf.variable_scope("conv"):

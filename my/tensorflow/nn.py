@@ -164,7 +164,7 @@ def conv1d(in_, filter_size, height, padding, is_train=None, keep_prob=1.0, scop
         if is_train is not None and keep_prob < 1.0:
             in_ = dropout(in_, keep_prob, is_train)
         xxc = tf.nn.conv2d(in_, filter_, strides, padding) + bias  # [N*M, JX, W/filter_stride, d]
-        out = tf.reduce_max(tf.nn.relu(xxc), 2)  # [-1, JX, d]
+        out = tf.reduce_max(tf.nn.relu(xxc), 2)  # [-1, JX, d] # max pooling
         return out
 
 
@@ -177,5 +177,5 @@ def multi_conv1d(in_, filter_sizes, heights, padding, is_train=None, keep_prob=1
                 continue
             out = conv1d(in_, filter_size, height, padding, is_train=is_train, keep_prob=keep_prob, scope="conv1d_{}".format(height))
             outs.append(out)
-        concat_out = tf.concat(outs, 2)
+        concat_out = tf.concat(outs, 2) # 拼接卷积输出
         return concat_out
