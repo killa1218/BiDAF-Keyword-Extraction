@@ -51,7 +51,7 @@ def variable_with_weight_decay(name, shape, stddev, wd):
     var = variable_on_cpu(name, shape,
                            tf.truncated_normal_initializer(stddev=stddev))
     if wd:
-        weight_decay = tf.mul(tf.nn.l2_loss(var), wd, name='weight_loss')
+        weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
         tf.add_to_collection('losses', weight_decay)
     return var
 
@@ -83,7 +83,7 @@ def average_gradients(tower_grads):
             grads.append(expanded_g)
 
         # Average over the 'tower' dimension.
-        grad = tf.concat(0, grads)
+        grad = tf.concat(grads, 0)
         grad = tf.reduce_mean(grad, 0)
 
         # Keep in mind that the Variables are redundant because they are shared
@@ -98,7 +98,7 @@ def average_gradients(tower_grads):
 def mask(val, mask, name=None):
     if name is None:
         name = 'mask'
-    return tf.mul(val, tf.cast(mask, 'float'), name=name)
+    return tf.multiply(val, tf.cast(mask, 'float'), name=name)
 
 
 def exp_mask(val, mask, name=None):
@@ -146,7 +146,7 @@ def add_wd(wd, scope=None):
     variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope)
     with tf.name_scope("weight_decay"):
         for var in variables:
-            weight_decay = tf.mul(tf.nn.l2_loss(var), wd, name="{}/wd".format(var.op.name))
+            weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name="{}/wd".format(var.op.name))
             tf.add_to_collection('losses', weight_decay)
 
 

@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.python.ops.rnn_cell import DropoutWrapper, RNNCell, LSTMStateTuple
+from tensorflow.contrib.rnn import DropoutWrapper, RNNCell, LSTMStateTuple
 
 from my.tensorflow import exp_mask, flatten
 from my.tensorflow.nn import linear, softsel, double_linear_logits
@@ -109,12 +109,12 @@ class MatchCell(RNNCell):
             f = tf.tanh(linear([qs, x_tiled, h_prev_tiled], self._input_size, True, scope='f'))  # [N, JQ, d]
             a = tf.nn.softmax(exp_mask(linear(f, 1, True, squeeze=True, scope='a'), q_mask))  # [N, JQ]
             q = tf.reduce_sum(qs * tf.expand_dims(a, -1), 1)
-            z = tf.concat(1, [x, q])  # [N, 2d]
+            z = tf.concat([x, q], 1)  # [N, 2d]
             return self._cell(z, state)
 
 
 class AttentionCell(RNNCell):
-    def __init__(self, cell, memory, mask=None, controller=None, mapper=None, input_keep_prob=1.0, is_train=None):
+    def __init__(self, cell, memory, size, mask=None, controller=None, mapper=None, input_keep_prob=1.0, is_train=None):
         """
         Early fusion attention cell: uses the (inputs, state) to control the current attention.
 
@@ -129,7 +129,10 @@ class AttentionCell(RNNCell):
         self._flat_memory = flatten(memory, 2)
         self._flat_mask = flatten(mask, 1)
         if controller is None:
-            controller = AttentionCell.get_linear_controller(True, is_train=is_train)
+            controller = AttentionCell.get_double_linear_controller(size, True,
+                                                                    input_keep_prob=input_keep_prob, is_train=is_train)
+            self.A_m = linear(self._memory, size, True, scope='memory_prepare',
+                    input_keep_prob=input_keep_prob, is_train=is_train)   # [N * M, JX, d]
         self._controller = controller
         if mapper is None:
             mapper = AttentionCell.get_concat_mapper()
@@ -147,14 +150,14 @@ class AttentionCell(RNNCell):
 
     def __call__(self, inputs, state, scope=None):
         with tf.variable_scope(scope or "AttentionCell"):
-            memory_logits = self._controller(inputs, state, self._flat_memory)
+            memory_logits = self._controller(inputs, state, self.A_m) # [N * M, JX]
             sel_mem = softsel(self._flat_memory, memory_logits, mask=self._flat_mask)  # [N, m]
-            new_inputs, new_state = self._mapper(inputs, state, sel_mem)
+            new_inputs = self._mapper(inputs, sel_mem)
             return self._cell(new_inputs, state)
 
     @staticmethod
     def get_double_linear_controller(size, bias, input_keep_prob=1.0, is_train=None):
-        def double_linear_controller(inputs, state, memory):
+        def double_linear_controller(inputs, state, A_m):
             """
 
             :param inputs: [N, i]
@@ -162,19 +165,20 @@ class AttentionCell(RNNCell):
             :param memory: [N, M, m]
             :return: [N, M]
             """
-            rank = len(memory.get_shape())
-            _memory_size = tf.shape(memory)[rank-2]
-            tiled_inputs = tf.tile(tf.expand_dims(inputs, 1), [1, _memory_size, 1])
-            if isinstance(state, tuple):
-                tiled_states = [tf.tile(tf.expand_dims(each, 1), [1, _memory_size, 1])
-                                for each in state]
+            if isinstance(state, LSTMStateTuple):
+                in_ = tf.concat([inputs, state.c, state.h], -1)
             else:
-                tiled_states = [tf.tile(tf.expand_dims(state, 1), [1, _memory_size, 1])]
+                in_ = tf.concat([inputs, state], -1)
+            A_IS = linear(in_, size, bias, scope='first',
+                    input_keep_prob=input_keep_prob, is_train=is_train)
 
-            # [N, M, d]
-            in_ = tf.concat(2, [tiled_inputs] + tiled_states + [memory])
-            out = double_linear_logits(in_, size, bias, input_keep_prob=input_keep_prob,
-                                       is_train=is_train)
+            rank = len(A_m.get_shape())
+            _memory_size = tf.shape(A_m)[rank-2]
+            tiled_A_IS = tf.tile(tf.expand_dims(A_IS, 1), [1, _memory_size, 1])
+
+            in_ = tf.tanh(tf.add(tiled_A_IS, A_m)) # [N * M, JX, d]
+            out = linear(in_, 1, bias, squeeze=True, scope='second',
+                        input_keep_prob=input_keep_prob, is_train=is_train)  # [N * M, JX]
             return out
         return double_linear_controller
 
@@ -191,14 +195,14 @@ class AttentionCell(RNNCell):
                 tiled_states = [tf.tile(tf.expand_dims(state, 1), [1, _memory_size, 1])]
 
             # [N, M, d]
-            in_ = tf.concat(2, [tiled_inputs] + tiled_states + [memory])
+            in_ = tf.concat([tiled_inputs] + tiled_states + [memory], 2)
             out = linear(in_, 1, bias, squeeze=True, input_keep_prob=input_keep_prob, is_train=is_train)
             return out
         return linear_controller
 
     @staticmethod
     def get_concat_mapper():
-        def concat_mapper(inputs, state, sel_mem):
+        def concat_mapper(inputs, sel_mem):
             """
 
             :param inputs: [N, i]
@@ -206,12 +210,12 @@ class AttentionCell(RNNCell):
             :param sel_mem: [N, m]
             :return: (new_inputs, new_state) tuple
             """
-            return tf.concat(1, [inputs, sel_mem]), state
+            return tf.concat([inputs, sel_mem], 1)
         return concat_mapper
 
     @staticmethod
     def get_sim_mapper():
-        def sim_mapper(inputs, state, sel_mem):
+        def sim_mapper(inputs, sel_mem):
             """
             Assume that inputs and sel_mem are the same size
             :param inputs: [N, i]
@@ -219,5 +223,5 @@ class AttentionCell(RNNCell):
             :param sel_mem: [N, i]
             :return: (new_inputs, new_state) tuple
             """
-            return tf.concat(1, [inputs, sel_mem, inputs * sel_mem, tf.abs(inputs - sel_mem)]), state
+            return tf.concat([inputs, sel_mem, inputs * sel_mem, tf.abs(inputs - sel_mem)], 1)
         return sim_mapper

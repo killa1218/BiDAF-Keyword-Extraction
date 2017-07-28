@@ -30,6 +30,23 @@ def get_word_span(context, wordss, start, stop):
     return idxs[0], (idxs[-1][0], idxs[-1][1] + 1)
 
 
+def my_get_phrase(context, wordss, span):
+    ans_text = []
+    ans_sent_index = span[0][0]
+    ans_sent = wordss[ans_sent_index]
+
+    for s in span:
+        next_ans_word_index = s[1]
+        if (next_ans_word_index >= len(ans_sent)):
+            break
+        ans_text.append(ans_sent[next_ans_word_index])
+
+    if len(ans_text) > 0:
+        del ans_text[-1]
+    # print (ans_text)
+    return ans_text
+
+
 def get_phrase(context, wordss, span):
     """
     Obtain phrase as substring of context given start and stop indices in word level
@@ -39,6 +56,7 @@ def get_phrase(context, wordss, span):
     :param stop: [sent_idx, word_idx]
     :return:
     """
+
     start, stop = span
     flat_start = get_flat_idx(wordss, start)
     flat_stop = get_flat_idx(wordss, stop)
@@ -79,7 +97,23 @@ def process_tokens(temp_tokens):
     return tokens
 
 
-def get_best_span(ypi, yp2i):
+def my_get_best_span(ypi, yp2i):
+    # max_val = 0;
+    # best_word_span = tuple(range(0, len(yp_list_i)))
+    # best_sent_idx = 0
+    # for f, yp_list_i_j in enumerate(yp_list_i):
+    #     argmax_j1 = 0
+    #     for j in range(len(yp_list_i_j)):
+    #         val1 = yp_list_i_j[0][argmax_j1]
+    #         if val1 < ypif[j]:
+    #             val1 = ypif[j]
+    #             argmax_j1 = j
+
+    #         val2 = yp2if[j]
+    #         if val1 * val2 > max_val:
+    #             best_word_span = (argmax_j1, j)
+    #             best_sent_idx = f
+    #             max_val = val1 * val2
     max_val = 0
     best_word_span = (0, 1)
     best_sent_idx = 0
@@ -96,6 +130,40 @@ def get_best_span(ypi, yp2i):
                 best_word_span = (argmax_j1, j)
                 best_sent_idx = f
                 max_val = val1 * val2
+                #### for temp test ####
+    start = best_word_span[0]
+    end = best_word_span[1] + 1
+    best_word_span_list = []
+
+    for ans_index in range(start, end + 1):
+        best_word_span_list.append([best_sent_idx, ans_index])
+    #### for temp test ####
+
+    # print ("debug_info: ", start, end, len(best_word_span_list))
+    # exit()
+    return best_word_span_list, float(max_val)
+    # return ((best_sent_idx, best_word_span[0]), (best_sent_idx, best_word_span[1] + 1)), float(max_val)
+
+
+def get_best_span(ypi, yp2i):
+    max_val = 0
+    best_word_span = (0, 1)
+    best_sent_idx = 0
+    best_word_span_list = []
+    for f, (ypif, yp2if) in enumerate(zip(ypi, yp2i)):
+        argmax_j1 = 0
+        for j in range(len(ypif)):
+            val1 = ypif[argmax_j1]
+            if val1 < ypif[j]:
+                val1 = ypif[j]
+                argmax_j1 = j
+
+            val2 = yp2if[j]
+            if val1 * val2 > max_val:
+                best_word_span = (argmax_j1, j)
+                best_sent_idx = f
+                max_val = val1 * val2
+
     return ((best_sent_idx, best_word_span[0]), (best_sent_idx, best_word_span[1] + 1)), float(max_val)
 
 
@@ -104,7 +172,7 @@ def get_span_score_pairs(ypi, yp2i):
     for f, (ypif, yp2if) in enumerate(zip(ypi, yp2i)):
         for j in range(len(ypif)):
             for k in range(j, len(yp2if)):
-                span = ((f, j), (f, k+1))
+                span = ((f, j), (f, k + 1))
                 score = ypif[j] * yp2if[k]
                 span_score_pairs.append((span, score))
     return span_score_pairs

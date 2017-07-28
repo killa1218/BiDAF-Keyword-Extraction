@@ -9,7 +9,7 @@ import tensorflow as tf
 from tqdm import tqdm
 import numpy as np
 
-from basic.evaluator import ForwardEvaluator, MultiGPUF1Evaluator
+from basic.evaluator import Evaluator, Evaluation
 from basic.graph_handler import GraphHandler
 from basic.model import get_multi_gpu_models
 from basic.trainer import MultiGPUTrainer
@@ -81,8 +81,9 @@ def _train(config):
     pprint(config.__flags, indent=2)
     models = get_multi_gpu_models(config)
     model = models[0]
+    print("main", tf.get_variable_scope().reuse)
     trainer = MultiGPUTrainer(config, models)
-    evaluator = MultiGPUF1Evaluator(config, models, tensor_dict=model.tensor_dict if config.vis else None)
+    evaluator = Evaluator(config, models, tensor_dict=model.tensor_dict if config.vis else None)
     graph_handler = GraphHandler(config, model)  # controls all tensors and variables in the graph, including loading /saving
 
     # Variables
@@ -97,6 +98,7 @@ def _train(config):
         global_step = sess.run(model.global_step) + 1  # +1 because all calculations are done after step
         get_summary = global_step % config.log_period == 0
         loss, summary, train_op = trainer.step(sess, batches, get_summary=get_summary)
+        print("global_step:", global_step, "loss:", loss)
         if get_summary:
             graph_handler.add_summary(summary, global_step)
 
@@ -143,7 +145,7 @@ def _test(config):
     pprint(config.__flags, indent=2)
     models = get_multi_gpu_models(config)
     model = models[0]
-    evaluator = MultiGPUF1Evaluator(config, models, tensor_dict=models[0].tensor_dict if config.vis else None)
+    evaluator = Evaluator(config, models, tensor_dict=models[0].tensor_dict if config.vis else None)
     graph_handler = GraphHandler(config, model)
 
     sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
@@ -189,7 +191,7 @@ def _forward(config):
     pprint(config.__flags, indent=2)
     models = get_multi_gpu_models(config)
     model = models[0]
-    evaluator = ForwardEvaluator(config, model)
+    evaluator = Evaluator(config, model)
     graph_handler = GraphHandler(config, model)  # controls all tensors and variables in the graph, including loading /saving
 
     sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))

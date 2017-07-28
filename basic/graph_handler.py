@@ -5,7 +5,7 @@ import os
 
 import tensorflow as tf
 
-from basic.evaluator import Evaluation, F1Evaluation
+from basic.evaluator import Evaluation
 from my.utils import short_floats
 
 import pickle
@@ -20,12 +20,12 @@ class GraphHandler(object):
         self.save_path = os.path.join(config.save_dir, config.model_name)
 
     def initialize(self, sess):
-        sess.run(tf.initialize_all_variables())
+        sess.run(tf.global_variables_initializer())
         if self.config.load:
             self._load(sess)
 
         if self.config.mode == 'train':
-            self.writer = tf.train.SummaryWriter(self.config.log_dir, graph=tf.get_default_graph())
+            self.writer = tf.summary.FileWriter(self.config.log_dir, graph=tf.get_default_graph())
 
     def save(self, sess, global_step=None):
         saver = tf.train.Saver(max_to_keep=self.config.max_to_keep)
@@ -33,8 +33,9 @@ class GraphHandler(object):
 
     def _load(self, sess):
         config = self.config
-        vars_ = {var.name.split(":")[0]: var for var in tf.all_variables()}
-        if config.load_ema:
+        vars_ = {var.name.split(":")[0]: var for var in tf.global_variables()}
+        if config.load_ema and config.mode not in ["train"]:
+            # do not load ema shadow values into trainable variables when training
             ema = self.model.var_ema
             for var in tf.trainable_variables():
                 del vars_[var.name.split(":")[0]]
@@ -63,17 +64,17 @@ class GraphHandler(object):
     def dump_eval(self, e, precision=2, path=None):
         assert isinstance(e, Evaluation)
         if self.config.dump_pickle:
-            path = path or os.path.join(self.config.eval_dir, "{}-{}.pklz".format(e.data_type, str(e.global_step).zfill(6)))
+            path = path or os.path.join(self.config.eval_dir, "{}-{}.pklz".format(e.data_type, str(e.global_step)))
             with gzip.open(path, 'wb', compresslevel=3) as fh:
                 pickle.dump(e.dict, fh)
         else:
-            path = path or os.path.join(self.config.eval_dir, "{}-{}.json".format(e.data_type, str(e.global_step).zfill(6)))
+            path = path or os.path.join(self.config.eval_dir, "{}-{}.json".format(e.data_type, str(e.global_step)))
             with open(path, 'w') as fh:
                 json.dump(short_floats(e.dict, precision), fh)
 
     def dump_answer(self, e, path=None):
         assert isinstance(e, Evaluation)
-        path = path or os.path.join(self.config.answer_dir, "{}-{}.json".format(e.data_type, str(e.global_step).zfill(6)))
+        path = path or os.path.join(self.config.answer_dir, "{}-{}.json".format(e.data_type, str(e.global_step)))
         with open(path, 'w') as fh:
             json.dump(e.id2answer_dict, fh)
 

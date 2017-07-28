@@ -145,6 +145,7 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
             context = context.replace("``", '" ')
             xi = list(map(word_tokenize, sent_tokenize(context)))
             xi = [process_tokens(tokens) for tokens in xi]  # process tokens
+            xi = [[xijk for xijk in xij if xijk != ''] for xij in xi]
             # given xi, add chars
             cxi = [[list(xijk) for xijk in xij] for xij in xi]
             xp.append(xi)

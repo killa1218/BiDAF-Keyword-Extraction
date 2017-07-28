@@ -53,6 +53,7 @@ def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
 
 def evaluate(dataset, predictions):
     f1 = exact_match = total = 0
+    fe = open('./em_result1', 'w')
     for article in dataset:
         for paragraph in article['paragraphs']:
             for qa in paragraph['qas']:
@@ -63,16 +64,29 @@ def evaluate(dataset, predictions):
                     print(message, file=sys.stderr)
                     continue
                 ground_truths = list(map(lambda x: x['text'], qa['answers']))
+                hasP = 0
+                for str in ground_truths:
+                    for i, ch in enumerate(str):
+                        if ch in string.punctuation:
+
+                            hasP = 1
                 prediction = predictions[qa['id']]
-                exact_match += metric_max_over_ground_truths(
+                em_res = metric_max_over_ground_truths(
                     exact_match_score, prediction, ground_truths)
+                print('%s:\t%d\t%d' % (qa['id'], em_res, hasP), file = fe)
+                exact_match += em_res
                 f1 += metric_max_over_ground_truths(
                     f1_score, prediction, ground_truths)
 
     exact_match = 100.0 * exact_match / total
     f1 = 100.0 * f1 / total
+    fe.close()
 
-    return {'exact_match': exact_match, 'f1': f1}
+    f = open('./test_result', 'a+')
+    print('%.2f\t%.2f' % (exact_match, f1), file = f)
+    f.close()
+
+    return 1
 
 
 if __name__ == '__main__':
@@ -91,4 +105,4 @@ if __name__ == '__main__':
         dataset = dataset_json['data']
     with open(args.prediction_file) as prediction_file:
         predictions = json.load(prediction_file)
-    print(json.dumps(evaluate(dataset, predictions)))
+    evaluate(dataset, predictions)

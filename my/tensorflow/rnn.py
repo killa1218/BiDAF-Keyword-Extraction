@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.python.ops.rnn import dynamic_rnn as _dynamic_rnn, \
     bidirectional_dynamic_rnn as _bidirectional_dynamic_rnn
-from tensorflow.python.ops.rnn import bidirectional_rnn as _bidirectional_rnn
+from tensorflow.contrib.learn.python.learn.models import bidirectional_rnn as _bidirectional_rnn
 
 from my.tensorflow import flatten, reconstruct
 
@@ -60,6 +60,7 @@ def bidirectional_dynamic_rnn(cell_fw, cell_bw, inputs, sequence_length=None,
 
     fw_outputs = reconstruct(flat_fw_outputs, inputs, 2)
     bw_outputs = reconstruct(flat_bw_outputs, inputs, 2)
+    print(flat_fw_outputs," reconstruct -> ",fw_outputs)
     # FIXME : final state is not reshaped!
     return (fw_outputs, bw_outputs), final_state
 
