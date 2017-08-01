@@ -36,12 +36,12 @@ class Model(object):
         N, M, JX, JQ, VW, VC, W = \
             config.batch_size, config.max_num_sents, config.max_sent_size, \
             config.max_ques_size, config.word_vocab_size, config.char_vocab_size, config.max_word_size
-        self.x = tf.placeholder('int32', [N, None, None], name='x')
-        self.emx = tf.placeholder('int32', [N, None, None], name='emx') # exact match feature of context
+        self.x = tf.placeholder('int32', [N, None, None], name='x') # [N, M, JX]
+        # self.emx = tf.placeholder('int32', [N, None, None], name='emx') # exact match feature of context
         self.cx = tf.placeholder('int32', [N, None, None, W], name='cx')
         self.x_mask = tf.placeholder('bool', [N, None, None], name='x_mask')
-        self.q = tf.placeholder('int32', [N, None], name='q')
-        self.emq = tf.placeholder('int32', [N, None], name='emq') # exact match feature of query
+        self.q = tf.placeholder('int32', [N, None], name='q') # [N, JQ]
+        # self.emq = tf.placeholder('int32', [N, None], name='emq') # exact match feature of query
         self.cq = tf.placeholder('int32', [N, None, W], name='cq')
         self.q_mask = tf.placeholder('bool', [N, None], name='q_mask')
         self.y = tf.placeholder('bool', [N, None, None], name='y')
@@ -68,12 +68,12 @@ class Model(object):
             self._build_var_ema()
         if config.mode == 'train':
             self._build_ema()
-
         self.summary = tf.summary.merge_all()
         self.summary = tf.summary.merge(tf.get_collection("summaries", scope=self.scope))
 
     def _build_forward(self):
         config = self.config
+        # M === 1
         N, M, JX, JQ, VW, VC, d, W = \
             config.batch_size, config.max_num_sents, config.max_sent_size, \
             config.max_ques_size, config.word_vocab_size, config.char_vocab_size, config.hidden_size, \
@@ -98,24 +98,24 @@ class Model(object):
                     Acx = tf.reshape(Acx, [-1, JX, W, dc])
                     Acq = tf.reshape(Acq, [-1, JQ, W, dc])
 
-                    filter_sizes = list(map(int, config.out_channel_dims.split(',')))
-                    heights = list(map(int, config.filter_heights.split(',')))
+                    filter_sizes = list(map(int, config.out_channel_dims.split(','))) # filter 数量
+                    heights = list(map(int, config.filter_heights.split(','))) # filter 宽度
                     assert sum(filter_sizes) == dco, (filter_sizes, dco)
                     with tf.variable_scope("conv"):
-                        xx = multi_conv1d(Acx, filter_sizes, heights, "VALID",  self.is_train, config.keep_prob, scope="xx")
+                        xx = multi_conv1d(Acx, filter_sizes, heights, "VALID",  self.is_train, config.keep_prob, scope="xx") # self defined
                         if config.share_cnn_weights:
                             tf.get_variable_scope().reuse_variables()
                             qq = multi_conv1d(Acq, filter_sizes, heights, "VALID", self.is_train, config.keep_prob, scope="xx")
                         else:
                             qq = multi_conv1d(Acq, filter_sizes, heights, "VALID", self.is_train, config.keep_prob, scope="qq")
-                        xx = tf.reshape(xx, [-1, M, JX, dco])
-                        qq = tf.reshape(qq, [-1, JQ, dco])
+                        xx = tf.reshape(xx, [-1, M, JX, dco]) # context char cnn 结果 size(dco) == 100
+                        qq = tf.reshape(qq, [-1, JQ, dco]) # query char cnn 结果
 
             # Word Embedding
             if config.use_word_emb:
                 with tf.variable_scope("emb_var") as scope, tf.device("/cpu:0"):
                     if config.mode == 'train':
-                        word_emb_mat = tf.get_variable("word_emb_mat", dtype='float', shape=[VW, dw], initializer=get_initializer(config.emb_mat))
+                        word_emb_mat = tf.get_variable("word_emb_mat", dtype='float', shape=[VW, dw], initializer=get_initializer(config.emb_mat)) # emb_mat is glove
                     else:
                         word_emb_mat = tf.get_variable("word_emb_mat", shape=[VW, dw], dtype='float')
                     tf.get_variable_scope().reuse_variables()
@@ -124,8 +124,8 @@ class Model(object):
                         word_emb_mat = tf.concat([word_emb_mat, self.new_emb_mat], 0)
 
                 with tf.name_scope("word"):
-                    Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [N, M, JX, d]
-                    Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [N, JQ, d]
+                    Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [N, M, JX, d] context word embedding 结果
+                    Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [N, JQ, d] query word embedding 结果
                     self.tensor_dict['x'] = Ax
                     self.tensor_dict['q'] = Aq
                 # Concat Char-CNN Embedding and Word Embedding
@@ -136,16 +136,16 @@ class Model(object):
                     xx = Ax
                     qq = Aq
 
-            # exact match
-            if config.use_exact_match:
-                emx = tf.expand_dims(tf.cast(self.emx, tf.float32), -1)
-                xx = tf.concat([xx, emx], 3)  # [N, M, JX, di+1]
-                emq = tf.expand_dims(tf.cast(self.emq, tf.float32), -1)
-                qq = tf.concat([qq, emq], 2)  # [N, JQ, di+1]
+            # # exact match
+            # if config.use_exact_match:
+            #     emx = tf.expand_dims(tf.cast(self.emx, tf.float32), -1)
+            #     xx = tf.concat([xx, emx], 3)  # [N, M, JX, di+1]
+            #     emq = tf.expand_dims(tf.cast(self.emq, tf.float32), -1)
+            #     qq = tf.concat([qq, emq], 2)  # [N, JQ, di+1]
 
 
         # 2 layer highway network on Concat Embedding
-        if config.highway:
+        if config.highway: # 2-3% 效果提升
             with tf.variable_scope("highway"):
                 xx = highway_network(xx, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
                 tf.get_variable_scope().reuse_variables()
@@ -155,7 +155,7 @@ class Model(object):
         self.tensor_dict['qq'] = qq
 
         # Bidirection-LSTM (3rd layer on paper)
-        cell = GRUCell(d) if config.GRU else BasicLSTMCell(d, state_is_tuple=True)
+        cell = GRUCell(d) if config.GRU else BasicLSTMCell(d, state_is_tuple=True) # LSTM性能提升2%
         d_cell = SwitchableDropoutWrapper(cell, self.is_train, input_keep_prob=config.input_keep_prob)
         x_len = tf.reduce_sum(tf.cast(self.x_mask, 'int32'), 2)  # [N, M]
         q_len = tf.reduce_sum(tf.cast(self.q_mask, 'int32'), 1)  # [N]
@@ -193,7 +193,7 @@ class Model(object):
             (fw_g1, bw_g1), _ = bidirectional_dynamic_rnn(first_cell, first_cell, p0, x_len, dtype='float', scope='g1')  # [N, M, JX, 2d]
             g1 = tf.concat([fw_g1, bw_g1], 3)  # [N, M, JX, 2d]
 
-        # Self match layer
+        # Self match layer %%%
         with tf.variable_scope("SelfMatch"):
             s0 = tf.reshape(g1, [N * M, JX, 2 * d])  # [N * M, JX, 2d]
             x_mask = tf.reshape(self.x_mask, [N * M, JX])
@@ -202,26 +202,26 @@ class Model(object):
                                                                            dtype='float', scope='s')  # [N, M, JX, 2d]
             s1 = tf.concat([fw_s, bw_s], 2)  # [N * M, JX, 2d], M == 1
 
-        # prepare for PtrNet
-            encoder_output = tf.expand_dims(s1, 1)  # [N, M, JX, 2d]
-            encoder_output = tf.expand_dims(tf.cast(self.x_mask, tf.float32), -1) * encoder_output  # [N, M, JX, 2d]
-
-            if config.GRU:
-                encoder_state_final = tf.concat((fw_s_f, bw_s_f), 1, name='encoder_concat')
-            else:
-                if isinstance(fw_s_f, LSTMStateTuple):
-                    encoder_state_c = tf.concat(
-                        (fw_s_f.c, bw_s_f.c), 1, name='encoder_concat_c')
-                    encoder_state_h = tf.concat(
-                        (fw_s_f.h, bw_s_f.h), 1, name='encoder_concat_h')
-                    encoder_state_final = LSTMStateTuple(c=encoder_state_c, h=encoder_state_h)
-                elif isinstance(fw_s_f, tf.Tensor):
-                    encoder_state_final = tf.concat((fw_s_f, bw_s_f), 1, name='encoder_concat')
-                else:
-                    encoder_state_final = None
-                    tf.logging.error("encoder_state_final not set")
-
-            print("encoder_state_final:", encoder_state_final)
+        # # prepare for PtrNet Change back
+        #     encoder_output = tf.expand_dims(s1, 1)  # [N, M, JX, 2d]
+        #     encoder_output = tf.expand_dims(tf.cast(self.x_mask, tf.float32), -1) * encoder_output  # [N, M, JX, 2d]
+        #
+        #     if config.GRU:
+        #         encoder_state_final = tf.concat((fw_s_f, bw_s_f), 1, name='encoder_concat')
+        #     else:
+        #         if isinstance(fw_s_f, LSTMStateTuple):
+        #             encoder_state_c = tf.concat(
+        #                 (fw_s_f.c, bw_s_f.c), 1, name='encoder_concat_c')
+        #             encoder_state_h = tf.concat(
+        #                 (fw_s_f.h, bw_s_f.h), 1, name='encoder_concat_h')
+        #             encoder_state_final = LSTMStateTuple(c=encoder_state_c, h=encoder_state_h)
+        #         elif isinstance(fw_s_f, tf.Tensor):
+        #             encoder_state_final = tf.concat((fw_s_f, bw_s_f), 1, name='encoder_concat')
+        #         else:
+        #             encoder_state_final = None
+        #             tf.logging.error("encoder_state_final not set")
+        #
+        #     print("encoder_state_final:", encoder_state_final)
 
         with tf.variable_scope("output"):
             # eos_symbol = config.eos_symbol
@@ -601,7 +601,7 @@ def bi_attention(config, is_train, h, u, h_mask=None, u_mask=None, scope=None, t
         return u_a, h_a
 
 
-def attention_layer(config, is_train, h, u, h_mask=None, u_mask=None, scope=None, tensor_dict=None):
+def attention_layer(config, is_train, h, u, h_mask=None, u_mask=None, scope=None, tensor_dict=None): # tough
     with tf.variable_scope(scope or "attention_layer"):
         JX = tf.shape(h)[2]
         M = tf.shape(h)[1]
