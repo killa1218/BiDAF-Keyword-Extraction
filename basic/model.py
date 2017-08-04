@@ -33,23 +33,24 @@ class Model(object):
                                            initializer=tf.constant_initializer(0), trainable=False)
 
         # Define forward inputs here
-        N, M, JX, JQ, VW, VC, W = \
+        # N, M, JX, JQ, VW, VC, W = \
+        batchSize, maxStcNum, maxStcLen, maxQueLen, VW, VC, W = \
             config.batch_size, config.max_num_sents, config.max_sent_size, \
             config.max_ques_size, config.word_vocab_size, config.char_vocab_size, config.max_word_size
-        self.x = tf.placeholder('int32', [N, None, None], name='x') # [N, M, JX]
-        # self.emx = tf.placeholder('int32', [N, None, None], name='emx') # exact match feature of context
-        self.cx = tf.placeholder('int32', [N, None, None, W], name='cx')
-        self.x_mask = tf.placeholder('bool', [N, None, None], name='x_mask')
-        self.q = tf.placeholder('int32', [N, None], name='q') # [N, JQ]
-        # self.emq = tf.placeholder('int32', [N, None], name='emq') # exact match feature of query
-        self.cq = tf.placeholder('int32', [N, None, W], name='cq')
-        self.q_mask = tf.placeholder('bool', [N, None], name='q_mask')
-        self.y = tf.placeholder('bool', [N, None, None], name='y')
-        self.y2 = tf.placeholder('bool', [N, None, None], name='y2')
-        self.answer_string = tf.placeholder('int32', [N, None, W], name='answer_string')
-        self.answer_string_length = tf.placeholder('int32', [N, None, W], name='answer_string')
+        self.x = tf.placeholder('int32', [batchSize, None, None], name='x') # [batchSize, maxStcNum, maxStcLen]
+        # self.emx = tf.placeholder('int32', [batchSize, None, None], name='emx') # exact match feature of context
+        self.cx = tf.placeholder('int32', [batchSize, None, None, W], name='cx') # char index, used for indexing char embedding
+        self.x_mask = tf.placeholder('bool', [batchSize, None, None], name='x_mask')
+        # self.q = tf.placeholder('int32', [batchSize, None], name='q') # [batchSize, maxQueLen]
+        # self.emq = tf.placeholder('int32', [batchSize, None], name='emq') # exact match feature of query
+        # self.cq = tf.placeholder('int32', [batchSize, None, W], name='cq')
+        # self.q_mask = tf.placeholder('bool', [batchSize, None], name='q_mask')
+        self.y = tf.placeholder('bool', [batchSize, None, None], name='y')
+        self.y2 = tf.placeholder('bool', [batchSize, None, None], name='y2')
+        self.answer_string = tf.placeholder('int32', [batchSize, None, W], name='answer_string') # TODO Used for?
+        self.answer_string_length = tf.placeholder('int32', [batchSize, None, W], name='answer_string') # TODO Used for?
         self.is_train = tf.placeholder('bool', [], name='is_train')
-        self.new_emb_mat = tf.placeholder('float', [None, config.word_emb_size], name='new_emb_mat')
+        self.new_emb_mat = tf.placeholder('float', [None, config.word_emb_size], name='new_emb_mat') # word embedding storage(idx2vec)
 
         # Define misc
         self.tensor_dict = {}
@@ -65,7 +66,7 @@ class Model(object):
         self._build_loss()
         self.var_ema = None
         if rep:
-            self._build_var_ema()
+            self._build_var_ema() # only run in first model
         if config.mode == 'train':
             self._build_ema()
         self.summary = tf.summary.merge_all()
@@ -81,35 +82,36 @@ class Model(object):
         print("VW:", VW, "N:", N, "M:", M, "JX:", JX, "JQ:", JQ)
         JA = config.max_answer_length
         JX = tf.shape(self.x)[2]
-        JQ = tf.shape(self.q)[1]
+        # JQ = tf.shape(self.q)[1]
         M = tf.shape(self.x)[1]
         print("VW:", VW, "N:", N, "M:", M, "JX:", JX, "JQ:", JQ)
-        dc, dw, dco = config.char_emb_size, config.word_emb_size, config.char_out_size
+        dc, dw, dco = config.char_emb_size, config.word_emb_size, config.char_out_size # dco is the output size of char CNN
 
         with tf.variable_scope("emb"):
             # Char-CNN Embedding
-            if config.use_char_emb:
+            if config.use_char_emb: # switch
                 with tf.variable_scope("emb_var"), tf.device("/cpu:0"):
-                    char_emb_mat = tf.get_variable("char_emb_mat", shape=[VC, dc], dtype='float')
+                    char_emb_mat = tf.get_variable("char_emb_mat", shape=[VC, dc], dtype='float') # char embedding storage
 
                 with tf.variable_scope("char"):
                     Acx = tf.nn.embedding_lookup(char_emb_mat, self.cx)  # [N, M, JX, W, dc]
-                    Acq = tf.nn.embedding_lookup(char_emb_mat, self.cq)  # [N, JQ, W, dc]
+                    # Acq = tf.nn.embedding_lookup(char_emb_mat, self.cq)  # [N, JQ, W, dc]
                     Acx = tf.reshape(Acx, [-1, JX, W, dc])
-                    Acq = tf.reshape(Acq, [-1, JQ, W, dc])
+                    # Acq = tf.reshape(Acq, [-1, JQ, W, dc])
 
-                    filter_sizes = list(map(int, config.out_channel_dims.split(','))) # filter 数量
+                    filter_sizes = list(map(int, config.out_channel_dims.split(','))) # convolution kernal 数量
                     heights = list(map(int, config.filter_heights.split(','))) # filter 宽度
                     assert sum(filter_sizes) == dco, (filter_sizes, dco)
                     with tf.variable_scope("conv"):
                         xx = multi_conv1d(Acx, filter_sizes, heights, "VALID",  self.is_train, config.keep_prob, scope="xx") # self defined
-                        if config.share_cnn_weights:
-                            tf.get_variable_scope().reuse_variables()
-                            qq = multi_conv1d(Acq, filter_sizes, heights, "VALID", self.is_train, config.keep_prob, scope="xx")
-                        else:
-                            qq = multi_conv1d(Acq, filter_sizes, heights, "VALID", self.is_train, config.keep_prob, scope="qq")
+                        # if config.share_cnn_weights:
+                        #     tf.get_variable_scope().reuse_variables()
+                        #     # qq = multi_conv1d(Acq, filter_sizes, heights, "VALID", self.is_train, config.keep_prob, scope="xx")
+                        # else:
+                        #     # qq = multi_conv1d(Acq, filter_sizes, heights, "VALID", self.is_train, config.keep_prob, scope="qq")
+                        #     pass
                         xx = tf.reshape(xx, [-1, M, JX, dco]) # context char cnn 结果 size(dco) == 100
-                        qq = tf.reshape(qq, [-1, JQ, dco]) # query char cnn 结果
+                        # qq = tf.reshape(qq, [-1, JQ, dco]) # query char cnn 结果
 
             # Word Embedding
             if config.use_word_emb:
@@ -125,16 +127,16 @@ class Model(object):
 
                 with tf.name_scope("word"):
                     Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [N, M, JX, d] context word embedding 结果
-                    Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [N, JQ, d] query word embedding 结果
+                    # Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [N, JQ, d] query word embedding 结果
                     self.tensor_dict['x'] = Ax
-                    self.tensor_dict['q'] = Aq
+                    # self.tensor_dict['q'] = Aq
                 # Concat Char-CNN Embedding and Word Embedding
                 if config.use_char_emb:
                     xx = tf.concat([xx, Ax], 3)  # [N, M, JX, di]
-                    qq = tf.concat([qq, Aq], 2)  # [N, JQ, di]
+                    # qq = tf.concat([qq, Aq], 2)  # [N, JQ, di]
                 else:
                     xx = Ax
-                    qq = Aq
+                    # qq = Aq
 
             # # exact match
             # if config.use_exact_match:
@@ -149,16 +151,16 @@ class Model(object):
             with tf.variable_scope("highway"):
                 xx = highway_network(xx, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
                 tf.get_variable_scope().reuse_variables()
-                qq = highway_network(qq, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
+                # qq = highway_network(qq, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
 
         self.tensor_dict['xx'] = xx
-        self.tensor_dict['qq'] = qq
+        # self.tensor_dict['qq'] = qq
 
         # Bidirection-LSTM (3rd layer on paper)
         cell = GRUCell(d) if config.GRU else BasicLSTMCell(d, state_is_tuple=True) # LSTM性能提升2%
         d_cell = SwitchableDropoutWrapper(cell, self.is_train, input_keep_prob=config.input_keep_prob)
         x_len = tf.reduce_sum(tf.cast(self.x_mask, 'int32'), 2)  # [N, M]
-        q_len = tf.reduce_sum(tf.cast(self.q_mask, 'int32'), 1)  # [N]
+        # q_len = tf.reduce_sum(tf.cast(self.q_mask, 'int32'), 1)  # [N]
 
         with tf.variable_scope("prepro"):
             (fw_u, bw_u), _ = bidirectional_dynamic_rnn(d_cell, d_cell, qq, q_len, dtype='float', scope='u1')  # [N, J, d], [N, d]
