@@ -105,7 +105,8 @@ class Model(object):
             if config.use_word_emb:
                 with tf.variable_scope("emb_var"), tf.device("/cpu:0"):
                     if config.mode == 'train':
-                        word_emb_mat = tf.get_variable("word_emb_mat", dtype='float', shape=[VW, dw], initializer=get_initializer(config.emb_mat))
+                        word_emb_mat = tf.get_variable("word_emb_mat", dtype='float', shape=[VW, dw],
+                                                       initializer=get_initializer(config.emb_mat)) # emb_mat is glove
                     else:
                         word_emb_mat = tf.get_variable("word_emb_mat", shape=[VW, dw], dtype='float')
                     if config.use_glove_for_unk:
@@ -143,7 +144,7 @@ class Model(object):
             u = tf.concat([fw_u, bw_u], 2)
             if config.share_lstm_weights:
                 tf.get_variable_scope().reuse_variables()
-                (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell, cell, xx, x_len, dtype='float', scope='u1')  # [N, M, JX, 2d]
+                (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell, cell, xx, x_len, dtype='float', scope='u1')  # [N, M, JX, 2d] TODO JX == x_len?
                 h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
             else:
                 (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell, cell, xx, x_len, dtype='float', scope='h1')  # [N, M, JX, 2d]

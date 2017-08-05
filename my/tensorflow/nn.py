@@ -1,4 +1,5 @@
-from tensorflow.contrib.rnn.python.ops.rnn_cell import _linear
+from tensorflow.contrib.rnn.python.ops.core_rnn_cell import _linear
+from tensorflow.python.ops import init_ops
 from tensorflow.python.util import nest
 import tensorflow as tf
 
@@ -18,7 +19,9 @@ def linear(args, output_size, bias, bias_start=0.0, scope=None, squeeze=False, w
         flat_args = [tf.cond(is_train, lambda: tf.nn.dropout(arg, input_keep_prob), lambda: arg)
                      for arg in flat_args]
     with tf.variable_scope(scope or "linear"):
-        flat_out = _linear(flat_args, output_size, bias_start, bias_start=bias_start, scope=scope)
+        dtype = [a.dtype for a in args][0]
+        bias_init = init_ops.constant_initializer(bias_start, dtype=dtype)
+        flat_out = _linear(flat_args, output_size, bias, bias_initializer=bias_init)
         out = reconstruct(flat_out, args[0], 1)
         if squeeze:
             out = tf.squeeze(out, [len(args[0].get_shape().as_list())-1])
