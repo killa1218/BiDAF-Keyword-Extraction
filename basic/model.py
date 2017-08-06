@@ -17,9 +17,9 @@ def get_multi_gpu_models(config):
     models = []
     for gpu_idx in range(config.num_gpus):
         with tf.name_scope("model_{}".format(gpu_idx)) as scope, tf.device("/{}:{}".format(config.device_type, gpu_idx)):
-            with tf.variable_scope(tf.get_variable_scope(), reuse = True):
-                model = Model(config, scope, rep=gpu_idx == 0)
-                models.append(model)
+            model = Model(config, scope, rep=gpu_idx == 0)
+            tf.get_variable_scope().reuse_variables()
+            models.append(model)
     return models
 
 
@@ -127,8 +127,8 @@ class Model(object):
         # highway network
         if config.highway:
             with tf.variable_scope("highway"):
+                xx = highway_network(xx, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
                 with tf.variable_scope(tf.get_variable_scope(), reuse = True):
-                    xx = highway_network(xx, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
                     qq = highway_network(qq, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
 
         self.tensor_dict['xx'] = xx
