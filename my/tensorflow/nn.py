@@ -22,11 +22,11 @@ def linear(args, output_size, bias, bias_start=0.0, scope=None, squeeze=False, w
         dtype = [a.dtype for a in args][0]
         bias_init = init_ops.constant_initializer(bias_start, dtype=dtype)
         flat_out = _linear(flat_args, output_size, bias, bias_initializer=bias_init)
-        out = reconstruct(flat_out, args[0], 1)
-        if squeeze:
-            out = tf.squeeze(out, [len(args[0].get_shape().as_list())-1])
-        if wd:
-            add_wd(wd)
+    out = reconstruct(flat_out, args[0], 1)
+    if squeeze:
+        out = tf.squeeze(out, [len(args[0].get_shape().as_list())-1])
+    if wd:
+        add_wd(wd)
 
     return out
 
