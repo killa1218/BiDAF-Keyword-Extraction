@@ -17,9 +17,9 @@ def get_multi_gpu_models(config):
     models = []
     for gpu_idx in range(config.num_gpus):
         with tf.name_scope("model_{}".format(gpu_idx)) as scope, tf.device("/{}:{}".format(config.device_type, gpu_idx)):
-            model = Model(config, scope, rep=gpu_idx == 0)
-            tf.get_variable_scope().reuse_variables()
-            models.append(model)
+            with tf.variable_scope(tf.get_variable_scope(), reuse = True):
+                model = Model(config, scope, rep=gpu_idx == 0)
+                models.append(model)
     return models
 
 
@@ -95,8 +95,8 @@ class Model(object):
                     with tf.variable_scope("conv"):
                         xx = multi_conv1d(Acx, filter_sizes, heights, "VALID",  self.is_train, config.keep_prob, scope="xx")
                         if config.share_cnn_weights:
-                            tf.get_variable_scope().reuse_variables()
-                            qq = multi_conv1d(Acq, filter_sizes, heights, "VALID", self.is_train, config.keep_prob, scope="xx")
+                            with tf.variable_scope(tf.get_variable_scope(), reuse = True):
+                                qq = multi_conv1d(Acq, filter_sizes, heights, "VALID", self.is_train, config.keep_prob, scope="xx")
                         else:
                             qq = multi_conv1d(Acq, filter_sizes, heights, "VALID", self.is_train, config.keep_prob, scope="qq")
                         xx = tf.reshape(xx, [-1, M, JX, dco])
@@ -127,9 +127,9 @@ class Model(object):
         # highway network
         if config.highway:
             with tf.variable_scope("highway"):
-                xx = highway_network(xx, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
-                tf.get_variable_scope().reuse_variables()
-                qq = highway_network(qq, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
+                with tf.variable_scope(tf.get_variable_scope(), reuse = True):
+                    xx = highway_network(xx, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
+                    qq = highway_network(qq, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
 
         self.tensor_dict['xx'] = xx
         self.tensor_dict['qq'] = qq
@@ -143,9 +143,9 @@ class Model(object):
             (fw_u, bw_u), ((_, fw_u_f), (_, bw_u_f)) = bidirectional_dynamic_rnn(d_cell, d_cell, qq, q_len, dtype='float', scope='u1')  # [N, J, d], [N, d]
             u = tf.concat([fw_u, bw_u], 2)
             if config.share_lstm_weights:
-                tf.get_variable_scope().reuse_variables()
-                (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell, cell, xx, x_len, dtype='float', scope='u1')  # [N, M, JX, 2d] TODO JX == x_len?
-                h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
+                with tf.variable_scope(tf.get_variable_scope(), reuse = True):
+                    (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell, cell, xx, x_len, dtype='float', scope='u1')  # [N, M, JX, 2d] TODO JX == x_len?
+                    h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
             else:
                 (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell, cell, xx, x_len, dtype='float', scope='h1')  # [N, M, JX, 2d]
                 h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
