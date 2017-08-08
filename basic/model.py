@@ -163,8 +163,8 @@ class Model(object):
         # q_len = tf.reduce_sum(tf.cast(self.q_mask, 'int32'), 1)  # [N]
 
         with tf.variable_scope("prepro"):
-            (fw_u, bw_u), _ = bidirectional_dynamic_rnn(d_cell, d_cell, qq, q_len, dtype='float', scope='u1')  # [N, J, d], [N, d]
-            u = tf.concat([fw_u, bw_u], 2)
+            # (fw_u, bw_u), _ = bidirectional_dynamic_rnn(d_cell, d_cell, qq, q_len, dtype='float', scope='u1')  # [N, J, d], [N, d]
+            # u = tf.concat([fw_u, bw_u], 2) # [N, JQ, 2d]
             if config.share_lstm_weights:
                 tf.get_variable_scope().reuse_variables()
                 (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell, cell, xx, x_len, dtype='float', scope='u1')  # [N, M, JX, 2d]
@@ -172,16 +172,21 @@ class Model(object):
             else:
                 (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell, cell, xx, x_len, dtype='float', scope='h1')  # [N, M, JX, 2d]
                 h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
-            self.tensor_dict['u'] = u
+            # self.tensor_dict['u'] = u
             self.tensor_dict['h'] = h
 
         # Attention Flow Layer (4th layer on paper)
         with tf.variable_scope("main"):
             # if config.dynamic_att:
             p0 = h
-            u = tf.reshape(tf.tile(tf.expand_dims(u, 1), [1, M, 1, 1]), [N * M, JQ, 2 * d])
-            q_mask = tf.reshape(tf.tile(tf.expand_dims(self.q_mask, 1), [1, M, 1]), [N * M, JQ])
-            first_cell = AttentionCell(cell, u, size=d, mask=q_mask, mapper='sim',
+
+            # u = tf.reshape(tf.tile(tf.expand_dims(u, 1), [1, M, 1, 1]), [N * M, JQ, 2 * d])
+            # q_mask = tf.reshape(tf.tile(tf.expand_dims(self.q_mask, 1), [1, M, 1]), [N * M, JQ])
+            # first_cell = AttentionCell(cell, u, size=d, mask=q_mask, mapper='sim',
+            #                            input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+            hh = tf.reshape([-1, JX, 2 * d])
+            x_mask = self.x_mask
+            first_cell = AttentionCell(cell, hh, size=d, mask=x_mask, mapper='sim',
                                        input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
             # else:
             #     p0 = attention_layer(config, self.is_train, h, u, h_mask=self.x_mask, u_mask=self.q_mask, scope="p0", tensor_dict=self.tensor_dict)
@@ -196,13 +201,13 @@ class Model(object):
             g1 = tf.concat([fw_g1, bw_g1], 3)  # [N, M, JX, 2d]
 
         # Self match layer %%%
-        with tf.variable_scope("SelfMatch"):
-            s0 = tf.reshape(g1, [N * M, JX, 2 * d])  # [N * M, JX, 2d]
-            x_mask = tf.reshape(self.x_mask, [N * M, JX])
-            first_cell = AttentionCell(cell, s0, size=d, mask=x_mask, is_train=self.is_train)
-            (fw_s, bw_s), (fw_s_f, bw_s_f) = bidirectional_dynamic_rnn(first_cell, first_cell, s0, x_len,
-                                                                           dtype='float', scope='s')  # [N, M, JX, 2d]
-            s1 = tf.concat([fw_s, bw_s], 2)  # [N * M, JX, 2d], M == 1
+        # with tf.variable_scope("SelfMatch"):
+        #     s0 = tf.reshape(g1, [N * M, JX, 2 * d])  # [N * M, JX, 2d]
+        #     x_mask = tf.reshape(self.x_mask, [N * M, JX])
+        #     first_cell = AttentionCell(cell, s0, size=d, mask=x_mask, is_train=self.is_train)
+        #     (fw_s, bw_s), (fw_s_f, bw_s_f) = bidirectional_dynamic_rnn(first_cell, first_cell, s0, x_len,
+        #                                                                    dtype='float', scope='s')  # [N, M, JX, 2d]
+        #     s1 = tf.concat([fw_s, bw_s], 2)  # [N * M, JX, 2d], M == 1
 
         # # prepare for PtrNet Change back
         #     encoder_output = tf.expand_dims(s1, 1)  # [N, M, JX, 2d]
@@ -229,92 +234,92 @@ class Model(object):
             # eos_symbol = config.eos_symbol
             # next_symbol = config.next_symbol
 
-            tf.assert_equal(M, 1)  # currently dynamic M is not supported, thus we assume M==1
-            answer_string = tf.placeholder(
-                shape=(N, 1, JA + 1),
-                dtype=tf.int32,
-                name='answer_string'
-            )  # [N, M, JA + 1]
-            answer_string_mask = tf.placeholder(
-                shape=(N, 1, JA + 1),
-                dtype=tf.bool,
-                name='answer_string_mask'
-            )  # [N, M, JA + 1]
-            answer_string_length = tf.placeholder(
-                shape=(N, 1),
-                dtype=tf.int32,
-                name='answer_string_length',
-            ) # [N, M]
-            self.tensor_dict['answer_string'] = answer_string
-            self.tensor_dict['answer_string_mask'] = answer_string_mask
-            self.tensor_dict['answer_string_length'] = answer_string_length
-            self.answer_string = answer_string
-            self.answer_string_mask = answer_string_mask
-            self.answer_string_length = answer_string_length
-
-            answer_string_flattened = tf.reshape(answer_string, [N * M, JA + 1])
-            self.answer_string_flattened = answer_string_flattened  # [N * M, JA+1]
-            print("answer_string_flattened:", answer_string_flattened)
-
-            answer_string_length_flattened = tf.reshape(answer_string_length, [N * M])
-            self.answer_string_length_flattened = answer_string_length_flattened  # [N * M]
-            print("answer_string_length_flattened:", answer_string_length_flattened)
-
-            decoder_cell = GRUCell(2 * d) if config.GRU else BasicLSTMCell(2 * d, state_is_tuple=True)
-
-            with tf.variable_scope("Decoder"):
-                decoder_train_logits = ptr_decoder(decoder_cell,
-                                                   tf.reshape(tp0, [N * M, JX, 2 * d]),  # [N * M, JX, 2d]
-                                                   tf.reshape(encoder_output, [N * M, JX, 2 * d]),  # [N * M, JX, 2d]
-                                                   encoder_final_state=encoder_state_final,
-                                                   max_encoder_length=config.sent_size_th,
-                                                   decoder_output_length=answer_string_length_flattened,  # [N * M]
-                                                   batch_size=N,  # N * M (M=1)
-                                                   attention_proj_dim=self.config.decoder_proj_dim,
-                                                   scope='ptr_decoder')  # [batch_size, dec_len*, enc_seq_len + 1]
-
-                self.decoder_train_logits = decoder_train_logits
-                print("decoder_train_logits:", decoder_train_logits)
-                self.decoder_train_softmax = tf.nn.softmax(self.decoder_train_logits)
-                self.decoder_inference = tf.argmax(decoder_train_logits, axis=2,
-                                                   name='decoder_inference')  # [N, JA + 1]
-
-            self.yp = tf.ones([N, M, JX], dtype=tf.int32) * -1
-            self.yp2 = tf.ones([N, M, JX], dtype=tf.int32) * -1
-
-            # logits = get_logits([g1, p0], d, True, wd=config.wd, input_keep_prob=config.input_keep_prob,
-            #                     mask=self.x_mask, is_train=self.is_train, func=config.answer_func, scope='logits1')
-            # a1i = softsel(tf.reshape(g1, [N, M * JX, 2 * d]), tf.reshape(logits, [N, M * JX]))
-            # a1i = tf.tile(tf.expand_dims(tf.expand_dims(a1i, 1), 1), [1, M, JX, 1])
+            # tf.assert_equal(M, 1)  # currently dynamic M is not supported, thus we assume M==1
+            # answer_string = tf.placeholder(
+            #     shape=(N, 1, JA + 1),
+            #     dtype=tf.int32,
+            #     name='answer_string'
+            # )  # [N, M, JA + 1]
+            # answer_string_mask = tf.placeholder(
+            #     shape=(N, 1, JA + 1),
+            #     dtype=tf.bool,
+            #     name='answer_string_mask'
+            # )  # [N, M, JA + 1]
+            # answer_string_length = tf.placeholder(
+            #     shape=(N, 1),
+            #     dtype=tf.int32,
+            #     name='answer_string_length',
+            # ) # [N, M]
+            # self.tensor_dict['answer_string'] = answer_string
+            # self.tensor_dict['answer_string_mask'] = answer_string_mask
+            # self.tensor_dict['answer_string_length'] = answer_string_length
+            # self.answer_string = answer_string
+            # self.answer_string_mask = answer_string_mask
+            # self.answer_string_length = answer_string_length
             #
-            # (fw_g2, bw_g2), _ = bidirectional_dynamic_rnn(d_cell, d_cell, tf.concat([p0, g1, a1i, g1 * a1i], 3),
-            #                                               x_len, dtype='float', scope='g2')  # [N, M, JX, 2d]
-            # g2 = tf.concat([fw_g2, bw_g2], 3)
-            # logits2 = get_logits([g2, p0], d, True, wd=config.wd, input_keep_prob=config.input_keep_prob,
-            #                      mask=self.x_mask,
-            #                      is_train=self.is_train, func=config.answer_func, scope='logits2')
+            # answer_string_flattened = tf.reshape(answer_string, [N * M, JA + 1])
+            # self.answer_string_flattened = answer_string_flattened  # [N * M, JA+1]
+            # print("answer_string_flattened:", answer_string_flattened)
             #
-            # flat_logits = tf.reshape(logits, [-1, M * JX])
-            # flat_yp = tf.nn.softmax(flat_logits)  # [-1, M*JX]
-            # yp = tf.reshape(flat_yp, [-1, M, JX])
-            # flat_logits2 = tf.reshape(logits2, [-1, M * JX])
-            # flat_yp2 = tf.nn.softmax(flat_logits2)
-            # yp2 = tf.reshape(flat_yp2, [-1, M, JX])
+            # answer_string_length_flattened = tf.reshape(answer_string_length, [N * M])
+            # self.answer_string_length_flattened = answer_string_length_flattened  # [N * M]
+            # print("answer_string_length_flattened:", answer_string_length_flattened)
             #
-            # self.tensor_dict['g1'] = g1
-            # self.tensor_dict['g2'] = g2
+            # decoder_cell = GRUCell(2 * d) if config.GRU else BasicLSTMCell(2 * d, state_is_tuple=True)
             #
-            # self.logits = flat_logits
-            # self.logits2 = flat_logits2
-            # self.yp = yp
-            # self.yp2 = yp2
+            # with tf.variable_scope("Decoder"):
+            #     decoder_train_logits = ptr_decoder(decoder_cell,
+            #                                        tf.reshape(tp0, [N * M, JX, 2 * d]),  # [N * M, JX, 2d]
+            #                                        tf.reshape(encoder_output, [N * M, JX, 2 * d]),  # [N * M, JX, 2d]
+            #                                        encoder_final_state=encoder_state_final,
+            #                                        max_encoder_length=config.sent_size_th,
+            #                                        decoder_output_length=answer_string_length_flattened,  # [N * M]
+            #                                        batch_size=N,  # N * M (M=1)
+            #                                        attention_proj_dim=self.config.decoder_proj_dim,
+            #                                        scope='ptr_decoder')  # [batch_size, dec_len*, enc_seq_len + 1]
+            #
+            #     self.decoder_train_logits = decoder_train_logits
+            #     print("decoder_train_logits:", decoder_train_logits)
+            #     self.decoder_train_softmax = tf.nn.softmax(self.decoder_train_logits)
+            #     self.decoder_inference = tf.argmax(decoder_train_logits, axis=2,
+            #                                        name='decoder_inference')  # [N, JA + 1]
+            #
+            # self.yp = tf.ones([N, M, JX], dtype=tf.int32) * -1
+            # self.yp2 = tf.ones([N, M, JX], dtype=tf.int32) * -1
+
+            logits = get_logits([g1, p0], d, True, wd=config.wd, input_keep_prob=config.input_keep_prob,
+                                mask=self.x_mask, is_train=self.is_train, func=config.answer_func, scope='logits1')
+            a1i = softsel(tf.reshape(g1, [N, M * JX, 2 * d]), tf.reshape(logits, [N, M * JX]))
+            a1i = tf.tile(tf.expand_dims(tf.expand_dims(a1i, 1), 1), [1, M, JX, 1])
+
+            (fw_g2, bw_g2), _ = bidirectional_dynamic_rnn(d_cell, d_cell, tf.concat([p0, g1, a1i, g1 * a1i], 3),
+                                                          x_len, dtype='float', scope='g2')  # [N, M, JX, 2d]
+            g2 = tf.concat([fw_g2, bw_g2], 3)
+            logits2 = get_logits([g2, p0], d, True, wd=config.wd, input_keep_prob=config.input_keep_prob,
+                                 mask=self.x_mask,
+                                 is_train=self.is_train, func=config.answer_func, scope='logits2')
+
+            flat_logits = tf.reshape(logits, [-1, M * JX])
+            flat_yp = tf.nn.softmax(flat_logits)  # [-1, M*JX]
+            yp = tf.reshape(flat_yp, [-1, M, JX])
+            flat_logits2 = tf.reshape(logits2, [-1, M * JX])
+            flat_yp2 = tf.nn.softmax(flat_logits2)
+            yp2 = tf.reshape(flat_yp2, [-1, M, JX])
+
+            self.tensor_dict['g1'] = g1
+            self.tensor_dict['g2'] = g2
+
+            self.logits = flat_logits
+            self.logits2 = flat_logits2
+            self.yp = yp
+            self.yp2 = yp2
 
     def _build_loss(self):
 
         N = self.config.batch_size
         JX = tf.shape(self.x)[2]
         M = tf.shape(self.x)[1]
-        JQ = tf.shape(self.q)[1]
+        # JQ = tf.shape(self.q)[1]
 
         logits = self.decoder_train_logits[
                  :,
