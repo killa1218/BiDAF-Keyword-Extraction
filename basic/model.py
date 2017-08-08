@@ -177,15 +177,15 @@ class Model(object):
 
         # Attention Flow Layer (4th layer on paper)
         with tf.variable_scope("main"):
-            if config.dynamic_att:
-                p0 = h
-                u = tf.reshape(tf.tile(tf.expand_dims(u, 1), [1, M, 1, 1]), [N * M, JQ, 2 * d])
-                q_mask = tf.reshape(tf.tile(tf.expand_dims(self.q_mask, 1), [1, M, 1]), [N * M, JQ])
-                first_cell = AttentionCell(cell, u, size=d, mask=q_mask, mapper='sim',
-                                           input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
-            else:
-                p0 = attention_layer(config, self.is_train, h, u, h_mask=self.x_mask, u_mask=self.q_mask, scope="p0", tensor_dict=self.tensor_dict)
-                first_cell = d_cell
+            # if config.dynamic_att:
+            p0 = h
+            u = tf.reshape(tf.tile(tf.expand_dims(u, 1), [1, M, 1, 1]), [N * M, JQ, 2 * d])
+            q_mask = tf.reshape(tf.tile(tf.expand_dims(self.q_mask, 1), [1, M, 1]), [N * M, JQ])
+            first_cell = AttentionCell(cell, u, size=d, mask=q_mask, mapper='sim',
+                                       input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+            # else:
+            #     p0 = attention_layer(config, self.is_train, h, u, h_mask=self.x_mask, u_mask=self.q_mask, scope="p0", tensor_dict=self.tensor_dict)
+            #     first_cell = d_cell
 
         # Modeling layer (5th layer on paper)
             tp0 = p0

@@ -223,5 +223,6 @@ class AttentionCell(RNNCell):
             :param sel_mem: [N, i]
             :return: (new_inputs, new_state) tuple
             """
-            return tf.concat([inputs, sel_mem, inputs * sel_mem, tf.abs(inputs - sel_mem)], 1)
+            # return tf.concat([inputs, sel_mem, inputs * sel_mem, tf.abs(inputs - sel_mem)], 1)
+            return tf.concat([inputs, sel_mem, inputs * sel_mem], 1)
         return sim_mapper
