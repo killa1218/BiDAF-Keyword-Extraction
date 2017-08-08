@@ -157,8 +157,25 @@ class Model(object):
         # self.tensor_dict['qq'] = qq
 
         # Bidirection-LSTM (3rd layer on paper)
-        cell = GRUCell(d) if config.GRU else BasicLSTMCell(d, state_is_tuple=True) # LSTM性能提升2%
-        d_cell = SwitchableDropoutWrapper(cell, self.is_train, input_keep_prob=config.input_keep_prob)
+        # cell = GRUCell(d) if config.GRU else BasicLSTMCell(d, state_is_tuple=True) # LSTM性能提升2%
+        # d_cell = SwitchableDropoutWrapper(cell, self.is_train, input_keep_prob=config.input_keep_prob)
+        cell_fw = BasicLSTMCell(d, state_is_tuple=True)
+        cell_bw = BasicLSTMCell(d, state_is_tuple=True)
+        d_cell_fw = SwitchableDropoutWrapper(cell_fw, self.is_train, input_keep_prob=config.input_keep_prob)
+        d_cell_bw = SwitchableDropoutWrapper(cell_bw, self.is_train, input_keep_prob=config.input_keep_prob)
+        cell2_fw = BasicLSTMCell(d, state_is_tuple=True)
+        cell2_bw = BasicLSTMCell(d, state_is_tuple=True)
+        d_cell2_fw = SwitchableDropoutWrapper(cell2_fw, self.is_train, input_keep_prob=config.input_keep_prob)
+        d_cell2_bw = SwitchableDropoutWrapper(cell2_bw, self.is_train, input_keep_prob=config.input_keep_prob)
+        cell3_fw = BasicLSTMCell(d, state_is_tuple=True)
+        cell3_bw = BasicLSTMCell(d, state_is_tuple=True)
+        d_cell3_fw = SwitchableDropoutWrapper(cell3_fw, self.is_train, input_keep_prob=config.input_keep_prob)
+        d_cell3_bw = SwitchableDropoutWrapper(cell3_bw, self.is_train, input_keep_prob=config.input_keep_prob)
+        cell4_fw = BasicLSTMCell(d, state_is_tuple=True)
+        cell4_bw = BasicLSTMCell(d, state_is_tuple=True)
+        d_cell4_fw = SwitchableDropoutWrapper(cell4_fw, self.is_train, input_keep_prob=config.input_keep_prob)
+        d_cell4_bw = SwitchableDropoutWrapper(cell4_bw, self.is_train, input_keep_prob=config.input_keep_prob)
+
         x_len = tf.reduce_sum(tf.cast(self.x_mask, 'int32'), 2)  # [N, M]
         # q_len = tf.reduce_sum(tf.cast(self.q_mask, 'int32'), 1)  # [N]
 
@@ -167,10 +184,10 @@ class Model(object):
             # u = tf.concat([fw_u, bw_u], 2) # [N, JQ, 2d]
             if config.share_lstm_weights:
                 tf.get_variable_scope().reuse_variables()
-                (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell, cell, xx, x_len, dtype='float', scope='u1')  # [N, M, JX, 2d]
+                (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell_fw, cell_bw, xx, x_len, dtype='float', scope='u1')  # [N, M, JX, 2d]
                 h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
             else:
-                (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell, cell, xx, x_len, dtype='float', scope='h1')  # [N, M, JX, 2d]
+                (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell_fw, cell_bw, xx, x_len, dtype='float', scope='h1')  # [N, M, JX, 2d]
                 h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
             # self.tensor_dict['u'] = u
             self.tensor_dict['h'] = h
@@ -186,19 +203,35 @@ class Model(object):
             #                            input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
             hh = tf.reshape([-1, JX, 2 * d])
             x_mask = self.x_mask
-            first_cell = AttentionCell(cell, hh, size=d, mask=x_mask, mapper='sim',
-                                       input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+            # first_cell = AttentionCell(cell, hh, size=d, mask=x_mask, mapper='sim',
+            #                            input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+            first_cell_fw = AttentionCell(cell2_fw, hh, mask=x_mask, mapper='sim',
+                                          input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+            first_cell_bw = AttentionCell(cell2_bw, hh, mask=x_mask, mapper='sim',
+                                          input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+            second_cell_fw = AttentionCell(cell3_fw, hh, mask=x_mask, mapper='sim',
+                                           input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+            second_cell_bw = AttentionCell(cell3_bw, hh, mask=x_mask, mapper='sim',
+                                           input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+
             # else:
             #     p0 = attention_layer(config, self.is_train, h, u, h_mask=self.x_mask, u_mask=self.q_mask, scope="p0", tensor_dict=self.tensor_dict)
             #     first_cell = d_cell
 
         # Modeling layer (5th layer on paper)
-            tp0 = p0
-            for layer_idx in range(config.LSTM_num_layers-1):
-                (fw_g0, bw_g0), _ = bidirectional_dynamic_rnn(first_cell, first_cell, p0, x_len, dtype='float', scope="g_{}".format(layer_idx))  # [N, M, JX, 2d]
-                p0 = tf.concat([fw_g0, bw_g0], 3)
-            (fw_g1, bw_g1), _ = bidirectional_dynamic_rnn(first_cell, first_cell, p0, x_len, dtype='float', scope='g1')  # [N, M, JX, 2d]
-            g1 = tf.concat([fw_g1, bw_g1], 3)  # [N, M, JX, 2d]
+            (fw_g0, bw_g0), _ = bidirectional_dynamic_rnn(first_cell_fw, first_cell_bw, p0, x_len, dtype='float',
+                                                          scope='g0')  # [N, M, JX, 2d]
+            g0 = tf.concat(axis=3, values=[fw_g0, bw_g0]) # [N, M, JX, 4d]
+            (fw_g1, bw_g1), _ = bidirectional_dynamic_rnn(second_cell_fw, second_cell_bw, g0, x_len, dtype='float',
+                                                          scope='g1')  # [N, M, JX, 2d]
+            g1 = tf.concat(axis=3, values=[fw_g1, bw_g1]) # [N, M, JX, 4d]
+
+            # tp0 = p0
+            # for layer_idx in range(config.LSTM_num_layers-1):
+            #     (fw_g0, bw_g0), _ = bidirectional_dynamic_rnn(first_cell_fw, first_cell_fw, p0, x_len, dtype='float', scope="g_{}".format(layer_idx))  # [N, M, JX, 2d]
+            #     p0 = tf.concat([fw_g0, bw_g0], 3)
+            # (fw_g1, bw_g1), _ = bidirectional_dynamic_rnn(first_cell, first_cell, p0, x_len, dtype='float', scope='g1')  # [N, M, JX, 2d]
+            # g1 = tf.concat([fw_g1, bw_g1], 3)  # [N, M, JX, 2d]
 
         # Self match layer %%%
         # with tf.variable_scope("SelfMatch"):
@@ -292,7 +325,7 @@ class Model(object):
             a1i = softsel(tf.reshape(g1, [N, M * JX, 2 * d]), tf.reshape(logits, [N, M * JX]))
             a1i = tf.tile(tf.expand_dims(tf.expand_dims(a1i, 1), 1), [1, M, JX, 1])
 
-            (fw_g2, bw_g2), _ = bidirectional_dynamic_rnn(d_cell, d_cell, tf.concat([p0, g1, a1i, g1 * a1i], 3),
+            (fw_g2, bw_g2), _ = bidirectional_dynamic_rnn(d_cell4_fw, d_cell4_bw, tf.concat([p0, g1, a1i, g1 * a1i], 3),
                                                           x_len, dtype='float', scope='g2')  # [N, M, JX, 2d]
             g2 = tf.concat([fw_g2, bw_g2], 3)
             logits2 = get_logits([g2, p0], d, True, wd=config.wd, input_keep_prob=config.input_keep_prob,
