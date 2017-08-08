@@ -124,15 +124,15 @@ class AttentionCell(RNNCell):
         :param controller: (inputs, prev_state, memory) -> memory_logits
         """
         self._cell = cell
-        self._memory = memory
+        self._memory = memory # [N, M, JX, 2d] for h
         self._mask = mask
-        self._flat_memory = flatten(memory, 2)
+        self._flat_memory = flatten(memory, 2) # Keep last 2 dims
         self._flat_mask = flatten(mask, 1)
         if controller is None:
             controller = AttentionCell.get_double_linear_controller(size, True,
                                                                     input_keep_prob=input_keep_prob, is_train=is_train)
             self.A_m = linear(self._memory, size, True, scope='memory_prepare',
-                    input_keep_prob=input_keep_prob, is_train=is_train)   # [N * M, JX, d]
+                    input_keep_prob=input_keep_prob, is_train=is_train)   # [N * M, JX, d] this is W_v*v
         self._controller = controller
         if mapper is None:
             mapper = AttentionCell.get_concat_mapper()
@@ -168,7 +168,7 @@ class AttentionCell(RNNCell):
             if isinstance(state, LSTMStateTuple):
                 in_ = tf.concat([inputs, state.c, state.h], -1)
             else:
-                in_ = tf.concat([inputs, state], -1)
+                in_ = tf.concat([inputs, state], -1) # TODO 为什么要拼起来
             A_IS = linear(in_, size, bias, scope='first',
                     input_keep_prob=input_keep_prob, is_train=is_train)
 
