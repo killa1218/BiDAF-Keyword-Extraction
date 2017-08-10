@@ -18,7 +18,7 @@ def get_2d_spans(text, tokenss):
     return spanss
 
 
-def get_word_span(context, wordss, start, stop):
+def get_word_span(context, wordss, start, stop): # get start and end word index of keyphrase in char index [start, stop]
     spanss = get_2d_spans(context, wordss)
     idxs = []
     for sent_idx, spans in enumerate(spanss):
@@ -27,7 +27,7 @@ def get_word_span(context, wordss, start, stop):
                 idxs.append((sent_idx, word_idx))
 
     assert len(idxs) > 0, "{} {} {} {}".format(context, spanss, start, stop)
-    return idxs[0], (idxs[-1][0], idxs[-1][1] + 1)
+    return idxs[0], (idxs[-1][0], idxs[-1][1] + 1) # to make [start, end)
 
 
 def my_get_phrase(context, wordss, span):
@@ -80,7 +80,7 @@ def get_flat_idx(wordss, idx):
     return sum(len(words) for words in wordss[:idx[0]]) + idx[1]
 
 
-def get_word_idx(context, wordss, idx):
+def get_word_idx(context, wordss, idx): # get the char index of word index idx
     spanss = get_2d_spans(context, wordss)
     return spanss[idx[0]][idx[1]][0]
 
