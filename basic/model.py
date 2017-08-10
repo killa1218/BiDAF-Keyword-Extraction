@@ -5,14 +5,12 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.rnn import GRUCell
 from tensorflow.contrib.rnn import BasicLSTMCell, LSTMStateTuple
-# import tensorflow.contrib.seq2seq as seq2seq
 
 from basic.read_data import DataSet
 from my.tensorflow import get_initializer
 from my.tensorflow.nn import softsel, get_logits, highway_network, multi_conv1d
 from my.tensorflow.rnn import bidirectional_dynamic_rnn
 from my.tensorflow.rnn_cell import SwitchableDropoutWrapper, AttentionCell
-from basic.ptrnet import ptr_decoder
 
 def get_multi_gpu_models(config):
     models = []
@@ -38,13 +36,8 @@ class Model(object):
             config.batch_size, config.max_num_sents, config.max_sent_size, \
             config.max_ques_size, config.word_vocab_size, config.char_vocab_size, config.max_word_size
         self.x = tf.placeholder('int32', [batchSize, None, None], name='x') # [batchSize, maxStcNum, maxStcLen]
-        # self.emx = tf.placeholder('int32', [batchSize, None, None], name='emx') # exact match feature of context
         self.cx = tf.placeholder('int32', [batchSize, None, None, W], name='cx') # char index, used for indexing char embedding
         self.x_mask = tf.placeholder('bool', [batchSize, None, None], name='x_mask')
-        # self.q = tf.placeholder('int32', [batchSize, None], name='q') # [batchSize, maxQueLen]
-        # self.emq = tf.placeholder('int32', [batchSize, None], name='emq') # exact match feature of query
-        # self.cq = tf.placeholder('int32', [batchSize, None, W], name='cq')
-        # self.q_mask = tf.placeholder('bool', [batchSize, None], name='q_mask')
         self.y = tf.placeholder('bool', [batchSize, None, None], name='y')
         self.y2 = tf.placeholder('bool', [batchSize, None, None], name='y2')
         self.answer_string = tf.placeholder('int32', [batchSize, None, W], name='answer_string') # TODO Used for?
@@ -82,7 +75,6 @@ class Model(object):
         print("VW:", VW, "N:", N, "M:", M, "JX:", JX, "JQ:", JQ)
         JA = config.max_answer_length
         JX = tf.shape(self.x)[2]
-        # JQ = tf.shape(self.q)[1]
         M = tf.shape(self.x)[1]
         print("VW:", VW, "N:", N, "M:", M, "JX:", JX, "JQ:", JQ)
         dc, dw, dco = config.char_emb_size, config.word_emb_size, config.char_out_size # dco is the output size of char CNN
@@ -95,23 +87,14 @@ class Model(object):
 
                 with tf.variable_scope("char"):
                     Acx = tf.nn.embedding_lookup(char_emb_mat, self.cx)  # [N, M, JX, W, dc]
-                    # Acq = tf.nn.embedding_lookup(char_emb_mat, self.cq)  # [N, JQ, W, dc]
                     Acx = tf.reshape(Acx, [-1, JX, W, dc])
-                    # Acq = tf.reshape(Acq, [-1, JQ, W, dc])
 
                     filter_sizes = list(map(int, config.out_channel_dims.split(','))) # convolution kernal 数量
                     heights = list(map(int, config.filter_heights.split(','))) # filter 宽度
                     assert sum(filter_sizes) == dco, (filter_sizes, dco)
                     with tf.variable_scope("conv"):
                         xx = multi_conv1d(Acx, filter_sizes, heights, "VALID",  self.is_train, config.keep_prob, scope="xx") # self defined
-                        # if config.share_cnn_weights:
-                        #     tf.get_variable_scope().reuse_variables()
-                        #     # qq = multi_conv1d(Acq, filter_sizes, heights, "VALID", self.is_train, config.keep_prob, scope="xx")
-                        # else:
-                        #     # qq = multi_conv1d(Acq, filter_sizes, heights, "VALID", self.is_train, config.keep_prob, scope="qq")
-                        #     pass
                         xx = tf.reshape(xx, [-1, M, JX, dco]) # context char cnn 结果 size(dco) == 100
-                        # qq = tf.reshape(qq, [-1, JQ, dco]) # query char cnn 结果
 
             # Word Embedding
             if config.use_word_emb:
@@ -127,61 +110,36 @@ class Model(object):
 
                 with tf.name_scope("word"):
                     Ax = tf.nn.embedding_lookup(word_emb_mat, self.x)  # [N, M, JX, d] context word embedding 结果
-                    # Aq = tf.nn.embedding_lookup(word_emb_mat, self.q)  # [N, JQ, d] query word embedding 结果
                     self.tensor_dict['x'] = Ax
-                    # self.tensor_dict['q'] = Aq
                 # Concat Char-CNN Embedding and Word Embedding
                 if config.use_char_emb:
                     xx = tf.concat([xx, Ax], 3)  # [N, M, JX, di]
-                    # qq = tf.concat([qq, Aq], 2)  # [N, JQ, di]
                 else:
                     xx = Ax
-                    # qq = Aq
-
-            # # exact match
-            # if config.use_exact_match:
-            #     emx = tf.expand_dims(tf.cast(self.emx, tf.float32), -1)
-            #     xx = tf.concat([xx, emx], 3)  # [N, M, JX, di+1]
-            #     emq = tf.expand_dims(tf.cast(self.emq, tf.float32), -1)
-            #     qq = tf.concat([qq, emq], 2)  # [N, JQ, di+1]
-
 
         # 2 layer highway network on Concat Embedding
         if config.highway: # 2-3% 效果提升
             with tf.variable_scope("highway"):
                 xx = highway_network(xx, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
                 tf.get_variable_scope().reuse_variables()
-                # qq = highway_network(qq, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
 
         self.tensor_dict['xx'] = xx
-        # self.tensor_dict['qq'] = qq
 
         # Bidirection-LSTM (3rd layer on paper)
-        # cell = GRUCell(d) if config.GRU else BasicLSTMCell(d, state_is_tuple=True) # LSTM性能提升2%
-        # d_cell = SwitchableDropoutWrapper(cell, self.is_train, input_keep_prob=config.input_keep_prob)
         cell_fw = BasicLSTMCell(d, state_is_tuple=True)
         cell_bw = BasicLSTMCell(d, state_is_tuple=True)
-        d_cell_fw = SwitchableDropoutWrapper(cell_fw, self.is_train, input_keep_prob=config.input_keep_prob)
-        d_cell_bw = SwitchableDropoutWrapper(cell_bw, self.is_train, input_keep_prob=config.input_keep_prob)
         cell2_fw = BasicLSTMCell(d, state_is_tuple=True)
         cell2_bw = BasicLSTMCell(d, state_is_tuple=True)
-        d_cell2_fw = SwitchableDropoutWrapper(cell2_fw, self.is_train, input_keep_prob=config.input_keep_prob)
-        d_cell2_bw = SwitchableDropoutWrapper(cell2_bw, self.is_train, input_keep_prob=config.input_keep_prob)
         cell3_fw = BasicLSTMCell(d, state_is_tuple=True)
         cell3_bw = BasicLSTMCell(d, state_is_tuple=True)
-        d_cell3_fw = SwitchableDropoutWrapper(cell3_fw, self.is_train, input_keep_prob=config.input_keep_prob)
-        d_cell3_bw = SwitchableDropoutWrapper(cell3_bw, self.is_train, input_keep_prob=config.input_keep_prob)
         cell4_fw = BasicLSTMCell(d, state_is_tuple=True)
         cell4_bw = BasicLSTMCell(d, state_is_tuple=True)
         d_cell4_fw = SwitchableDropoutWrapper(cell4_fw, self.is_train, input_keep_prob=config.input_keep_prob)
         d_cell4_bw = SwitchableDropoutWrapper(cell4_bw, self.is_train, input_keep_prob=config.input_keep_prob)
 
         x_len = tf.reduce_sum(tf.cast(self.x_mask, 'int32'), 2)  # [N, M]
-        # q_len = tf.reduce_sum(tf.cast(self.q_mask, 'int32'), 1)  # [N]
 
         with tf.variable_scope("prepro"):
-            # (fw_u, bw_u), _ = bidirectional_dynamic_rnn(d_cell, d_cell, qq, q_len, dtype='float', scope='u1')  # [N, J, d], [N, d]
-            # u = tf.concat([fw_u, bw_u], 2) # [N, JQ, 2d]
             if config.share_lstm_weights:
                 tf.get_variable_scope().reuse_variables()
                 (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell_fw, cell_bw, xx, x_len, dtype='float', scope='u1')  # [N, M, JX, 2d]
@@ -189,22 +147,13 @@ class Model(object):
             else:
                 (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell_fw, cell_bw, xx, x_len, dtype='float', scope='h1')  # [N, M, JX, 2d]
                 h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
-            # self.tensor_dict['u'] = u
             self.tensor_dict['h'] = h
 
         # Attention Flow Layer (4th layer on paper)
         with tf.variable_scope("main"):
-            # if config.dynamic_att:
             p0 = h
-
-            # u = tf.reshape(tf.tile(tf.expand_dims(u, 1), [1, M, 1, 1]), [N * M, JQ, 2 * d])
-            # q_mask = tf.reshape(tf.tile(tf.expand_dims(self.q_mask, 1), [1, M, 1]), [N * M, JQ])
-            # first_cell = AttentionCell(cell, u, size=d, mask=q_mask, mapper='sim',
-            #                            input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
-            hh = tf.reshape([-1, JX, 2 * d])
+            hh = tf.reshape(h, [-1, JX, 2 * d])
             x_mask = self.x_mask
-            # first_cell = AttentionCell(cell, hh, size=d, mask=x_mask, mapper='sim',
-            #                            input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
             first_cell_fw = AttentionCell(cell2_fw, hh, mask=x_mask, mapper='sim',
                                           input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
             first_cell_bw = AttentionCell(cell2_bw, hh, mask=x_mask, mapper='sim',
@@ -214,10 +163,6 @@ class Model(object):
             second_cell_bw = AttentionCell(cell3_bw, hh, mask=x_mask, mapper='sim',
                                            input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
 
-            # else:
-            #     p0 = attention_layer(config, self.is_train, h, u, h_mask=self.x_mask, u_mask=self.q_mask, scope="p0", tensor_dict=self.tensor_dict)
-            #     first_cell = d_cell
-
         # Modeling layer (5th layer on paper)
             (fw_g0, bw_g0), _ = bidirectional_dynamic_rnn(first_cell_fw, first_cell_bw, p0, x_len, dtype='float',
                                                           scope='g0')  # [N, M, JX, 2d]
@@ -226,100 +171,8 @@ class Model(object):
                                                           scope='g1')  # [N, M, JX, 2d]
             g1 = tf.concat(axis=3, values=[fw_g1, bw_g1]) # [N, M, JX, 4d]
 
-            # tp0 = p0
-            # for layer_idx in range(config.LSTM_num_layers-1):
-            #     (fw_g0, bw_g0), _ = bidirectional_dynamic_rnn(first_cell_fw, first_cell_fw, p0, x_len, dtype='float', scope="g_{}".format(layer_idx))  # [N, M, JX, 2d]
-            #     p0 = tf.concat([fw_g0, bw_g0], 3)
-            # (fw_g1, bw_g1), _ = bidirectional_dynamic_rnn(first_cell, first_cell, p0, x_len, dtype='float', scope='g1')  # [N, M, JX, 2d]
-            # g1 = tf.concat([fw_g1, bw_g1], 3)  # [N, M, JX, 2d]
-
-        # Self match layer %%%
-        # with tf.variable_scope("SelfMatch"):
-        #     s0 = tf.reshape(g1, [N * M, JX, 2 * d])  # [N * M, JX, 2d]
-        #     x_mask = tf.reshape(self.x_mask, [N * M, JX])
-        #     first_cell = AttentionCell(cell, s0, size=d, mask=x_mask, is_train=self.is_train)
-        #     (fw_s, bw_s), (fw_s_f, bw_s_f) = bidirectional_dynamic_rnn(first_cell, first_cell, s0, x_len,
-        #                                                                    dtype='float', scope='s')  # [N, M, JX, 2d]
-        #     s1 = tf.concat([fw_s, bw_s], 2)  # [N * M, JX, 2d], M == 1
-
-        # # prepare for PtrNet Change back
-        #     encoder_output = tf.expand_dims(s1, 1)  # [N, M, JX, 2d]
-        #     encoder_output = tf.expand_dims(tf.cast(self.x_mask, tf.float32), -1) * encoder_output  # [N, M, JX, 2d]
-        #
-        #     if config.GRU:
-        #         encoder_state_final = tf.concat((fw_s_f, bw_s_f), 1, name='encoder_concat')
-        #     else:
-        #         if isinstance(fw_s_f, LSTMStateTuple):
-        #             encoder_state_c = tf.concat(
-        #                 (fw_s_f.c, bw_s_f.c), 1, name='encoder_concat_c')
-        #             encoder_state_h = tf.concat(
-        #                 (fw_s_f.h, bw_s_f.h), 1, name='encoder_concat_h')
-        #             encoder_state_final = LSTMStateTuple(c=encoder_state_c, h=encoder_state_h)
-        #         elif isinstance(fw_s_f, tf.Tensor):
-        #             encoder_state_final = tf.concat((fw_s_f, bw_s_f), 1, name='encoder_concat')
-        #         else:
-        #             encoder_state_final = None
-        #             tf.logging.error("encoder_state_final not set")
-        #
-        #     print("encoder_state_final:", encoder_state_final)
-
+        # Output layer (Last layer on paper)
         with tf.variable_scope("output"):
-            # eos_symbol = config.eos_symbol
-            # next_symbol = config.next_symbol
-
-            # tf.assert_equal(M, 1)  # currently dynamic M is not supported, thus we assume M==1
-            # answer_string = tf.placeholder(
-            #     shape=(N, 1, JA + 1),
-            #     dtype=tf.int32,
-            #     name='answer_string'
-            # )  # [N, M, JA + 1]
-            # answer_string_mask = tf.placeholder(
-            #     shape=(N, 1, JA + 1),
-            #     dtype=tf.bool,
-            #     name='answer_string_mask'
-            # )  # [N, M, JA + 1]
-            # answer_string_length = tf.placeholder(
-            #     shape=(N, 1),
-            #     dtype=tf.int32,
-            #     name='answer_string_length',
-            # ) # [N, M]
-            # self.tensor_dict['answer_string'] = answer_string
-            # self.tensor_dict['answer_string_mask'] = answer_string_mask
-            # self.tensor_dict['answer_string_length'] = answer_string_length
-            # self.answer_string = answer_string
-            # self.answer_string_mask = answer_string_mask
-            # self.answer_string_length = answer_string_length
-            #
-            # answer_string_flattened = tf.reshape(answer_string, [N * M, JA + 1])
-            # self.answer_string_flattened = answer_string_flattened  # [N * M, JA+1]
-            # print("answer_string_flattened:", answer_string_flattened)
-            #
-            # answer_string_length_flattened = tf.reshape(answer_string_length, [N * M])
-            # self.answer_string_length_flattened = answer_string_length_flattened  # [N * M]
-            # print("answer_string_length_flattened:", answer_string_length_flattened)
-            #
-            # decoder_cell = GRUCell(2 * d) if config.GRU else BasicLSTMCell(2 * d, state_is_tuple=True)
-            #
-            # with tf.variable_scope("Decoder"):
-            #     decoder_train_logits = ptr_decoder(decoder_cell,
-            #                                        tf.reshape(tp0, [N * M, JX, 2 * d]),  # [N * M, JX, 2d]
-            #                                        tf.reshape(encoder_output, [N * M, JX, 2 * d]),  # [N * M, JX, 2d]
-            #                                        encoder_final_state=encoder_state_final,
-            #                                        max_encoder_length=config.sent_size_th,
-            #                                        decoder_output_length=answer_string_length_flattened,  # [N * M]
-            #                                        batch_size=N,  # N * M (M=1)
-            #                                        attention_proj_dim=self.config.decoder_proj_dim,
-            #                                        scope='ptr_decoder')  # [batch_size, dec_len*, enc_seq_len + 1]
-            #
-            #     self.decoder_train_logits = decoder_train_logits
-            #     print("decoder_train_logits:", decoder_train_logits)
-            #     self.decoder_train_softmax = tf.nn.softmax(self.decoder_train_logits)
-            #     self.decoder_inference = tf.argmax(decoder_train_logits, axis=2,
-            #                                        name='decoder_inference')  # [N, JA + 1]
-            #
-            # self.yp = tf.ones([N, M, JX], dtype=tf.int32) * -1
-            # self.yp2 = tf.ones([N, M, JX], dtype=tf.int32) * -1
-
             logits = get_logits([g1, p0], d, True, wd=config.wd, input_keep_prob=config.input_keep_prob,
                                 mask=self.x_mask, is_train=self.is_train, func=config.answer_func, scope='logits1')
             a1i = softsel(tf.reshape(g1, [N, M * JX, 2 * d]), tf.reshape(logits, [N, M * JX])) # do softmax in the whole passage scope
@@ -353,90 +206,20 @@ class Model(object):
         JX = tf.shape(self.x)[2]
         M = tf.shape(self.x)[1]
 
-        loss_mask = tf.reduce_max(tf.cast(self.q_mask, 'float'), 1)
-        if config.wy:
-            losses = tf.nn.sigmoid_cross_entropy_with_logits(
-                logits=tf.reshape(self.logits2, [-1, M, JX]), labels=tf.cast(self.wy, 'float'))  # [N, M, JX]
-            num_pos = tf.reduce_sum(tf.cast(self.wy, 'float'))
-            num_neg = tf.reduce_sum(tf.cast(self.x_mask, 'float')) - num_pos
-            damp_ratio = num_pos / num_neg
-            dampened_losses = losses * (
-                (tf.cast(self.x_mask, 'float') - tf.cast(self.wy, 'float')) * damp_ratio + tf.cast(self.wy, 'float'))
-            new_losses = tf.reduce_sum(dampened_losses, [1, 2])
-            ce_loss = tf.reduce_mean(loss_mask * new_losses)
-            """
-            if config.na: 
-                na = tf.reshape(self.na, [-1, 1])
-                concat_y = tf.concat(1, [na, tf.reshape(self.wy, [-1, M * JX])])
-                losses = tf.nn.softmax_cross_entropy_with_logits(
-                    self.concat_logits, tf.cast(concat_y, 'float') / tf.reduce_sum(tf.cast(self.wy, 'float')))
-            else:
-                losses = tf.nn.softmax_cross_entropy_with_logits(
-                    self.logits2, tf.cast(tf.reshape(self.wy, [-1, M * JX]), 'float') / tf.reduce_sum(tf.cast(self.wy, 'float')))
-            ce_loss = tf.reduce_mean(loss_mask * losses)
-            """
-            tf.add_to_collection('losses', ce_loss)
-
-        else:
-            if config.na:
-                na = tf.reshape(self.na, [-1, 1])
-                concat_y = tf.concat(axis=1, values=[na, tf.reshape(self.y, [-1, M * JX])])
-                losses = tf.nn.softmax_cross_entropy_with_logits(logits=self.concat_logits,
-                                                                 labels=tf.cast(concat_y, 'float'))
-                concat_y2 = tf.concat(axis=1, values=[na, tf.reshape(self.y2, [-1, M * JX])])
-                losses2 = tf.nn.softmax_cross_entropy_with_logits(logits=self.concat_logits2,
-                                                                  labels=tf.cast(concat_y2, 'float'))
-            else:
-                losses = tf.nn.softmax_cross_entropy_with_logits(
-                    logits=self.logits, labels=tf.cast(tf.reshape(self.y, [-1, M * JX]), 'float'))
-                losses2 = tf.nn.softmax_cross_entropy_with_logits(
-                    logits=self.logits2, labels=tf.cast(tf.reshape(self.y2, [-1, M * JX]), 'float'))
-            ce_loss = tf.reduce_mean(loss_mask * losses)
-            ce_loss2 = tf.reduce_mean(loss_mask * losses2)
-            tf.add_to_collection('losses', ce_loss)
-            tf.add_to_collection("losses", ce_loss2)
+        loss_mask = tf.reduce_max(tf.cast(self.x_mask, 'float'), 1)
+        losses = tf.nn.softmax_cross_entropy_with_logits(
+            logits=self.logits, labels=tf.cast(tf.reshape(self.y, [-1, M * JX]), 'float'))
+        losses2 = tf.nn.softmax_cross_entropy_with_logits(
+            logits=self.logits2, labels=tf.cast(tf.reshape(self.y2, [-1, M * JX]), 'float'))
+        ce_loss = tf.reduce_mean(loss_mask * losses)
+        ce_loss2 = tf.reduce_mean(loss_mask * losses2)
+        tf.add_to_collection('losses', ce_loss)
+        tf.add_to_collection("losses", ce_loss2)
 
         self.loss = tf.add_n(tf.get_collection('losses', scope=self.scope), name='loss')
         tf.summary.scalar(self.loss.op.name, self.loss)
         tf.add_to_collection('ema/scalar', self.loss)
 
-
-################################################
-
-        logits = self.decoder_train_logits[
-                 :,
-                 :tf.reduce_max(self.answer_string_length_flattened),
-                 :]  # [N * M, JX, JX + 1] -> [N * M, enc_seq_len + 1, JX + 1]
-        targets = self.answer_string_flattened[:, :tf.shape(logits)[1]]  # [N * M, JA+1] -> [N * M, JX + 1]
-
-        print("logits:", logits, "targets:", targets)
-
-        logits = tf.Print(logits, [tf.shape(logits), tf.argmax(logits, 2)], 'logits: ', summarize=100)
-        targets = tf.Print(targets, [targets], 'targets: ', summarize=100)
-
-        self.logits = logits
-        self.targets = targets
-
-        weights_mask = tf.reshape(self.answer_string_mask[:,:,:tf.shape(logits)[1]], [N * 1, tf.shape(logits)[1]])  # [N * M] -> [N * M, JX + 1]
-        decoder_loss = tf.losses.sparse_softmax_cross_entropy(logits=logits,
-                                                              labels=targets,
-                                                              weights=weights_mask,
-                                                              loss_collection=None)
-        tf.add_to_collection(tf.GraphKeys.LOSSES, decoder_loss)
-        self.decoder_loss = decoder_loss
-
-        # loss_mask = tf.reduce_max(tf.cast(self.q_mask, 'float'), 1)
-        # losses = tf.nn.softmax_cross_entropy_with_logits(
-        #     logits=self.logits, labels=tf.cast(tf.reshape(self.y, [-1, M * JX]), 'float'))
-        # ce_loss = tf.reduce_mean(loss_mask * losses)
-        # tf.add_to_collection(tf.GraphKeys.LOSSES, ce_loss)
-        # ce_loss2 = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-        #     logits=self.logits2, labels=tf.cast(tf.reshape(self.y2, [-1, M * JX]), 'float')))
-        # tf.add_to_collection(tf.GraphKeys.LOSSES, ce_loss2)
-
-        self.loss = tf.add_n(tf.get_collection(tf.GraphKeys.LOSSES, scope=self.scope), name='loss')
-        tf.summary.scalar(self.loss.op.name, self.loss)
-        tf.add_to_collection('ema/scalar', self.loss)
 
     def _build_ema(self):
         self.ema = tf.train.ExponentialMovingAverage(self.config.decay)
