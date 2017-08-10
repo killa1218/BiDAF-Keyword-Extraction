@@ -161,7 +161,6 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
                     char_counter[xijkl] += 1
 
         pi = 0
-
         rxi = [ai, pi]
         assert len(x) - 1 == ai
         assert len(x[ai]) - 1 == pi

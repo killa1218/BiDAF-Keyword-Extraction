@@ -234,10 +234,8 @@ def read_data(config, data_type, ref, data_filter=None):
 def get_squad_data_filter(config):
     def data_filter(data_point, shared):
         assert shared is not None
-        rx, rcx, q, cq, y = (data_point[key] for key in ('*x', '*cx', 'q', 'cq', 'y'))
+        rx, rcx, y = (data_point[key] for key in ('*x', '*cx', 'y'))
         x, cx = shared['x'], shared['cx']
-        if len(q) > config.ques_size_th:
-            return False
 
         # x filter
         xi = x[rx[0]][rx[1]]
@@ -295,15 +293,11 @@ def update_config(config, data_sets):
         shared = data_set.shared
         for idx in data_set.valid_idxs:
             rx = data['*x'][idx]
-            q = data['q'][idx]
             sents = shared['x'][rx[0]][rx[1]]
             config.max_para_size = max(config.max_para_size, sum(map(len, sents)))
             config.max_num_sents = max(config.max_num_sents, len(sents))
             config.max_sent_size = max(config.max_sent_size, max(map(len, sents)))
             config.max_word_size = max(config.max_word_size, max(len(word) for sent in sents for word in sent))
-            if len(q) > 0:
-                config.max_ques_size = max(config.max_ques_size, len(q))
-                config.max_word_size = max(config.max_word_size, max(len(word) for word in q))
 
     if config.mode == 'train':
         config.max_num_sents = min(config.max_num_sents, config.num_sents_th)
