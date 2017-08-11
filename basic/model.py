@@ -149,14 +149,19 @@ class Model(object):
             p0 = h
             hh = tf.reshape(h, [-1, JX, 2 * d])
             x_mask = self.x_mask
-            first_cell_fw = AttentionCell(cell2_fw, hh, 2 * d, mask=x_mask, mapper='sim',
-                                          input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
-            first_cell_bw = AttentionCell(cell2_bw, hh, 2 * d, mask=x_mask, mapper='sim',
-                                          input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
-            second_cell_fw = AttentionCell(cell3_fw, hh, 2 * d, mask=x_mask, mapper='sim',
-                                           input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
-            second_cell_bw = AttentionCell(cell3_bw, hh, 2 * d, mask=x_mask, mapper='sim',
-                                           input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+
+            with tf.variable_scope("first_cell_fw"):
+                first_cell_fw = AttentionCell(cell2_fw, hh, 2 * d, mask=x_mask, mapper='sim',
+                                              input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+            with tf.variable_scope("first_cell_bw"):
+                first_cell_bw = AttentionCell(cell2_bw, hh, 2 * d, mask=x_mask, mapper='sim',
+                                              input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+            with tf.variable_scope("second_cell_fw"):
+                second_cell_fw = AttentionCell(cell3_fw, hh, 2 * d, mask=x_mask, mapper='sim',
+                                               input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+            with tf.variable_scope("second_cell_bw"):
+                second_cell_bw = AttentionCell(cell3_bw, hh, 2 * d, mask=x_mask, mapper='sim',
+                                               input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
 
         # Modeling layer (5th layer on paper)
             (fw_g0, bw_g0), _ = bidirectional_dynamic_rnn(first_cell_fw, first_cell_bw, p0, x_len, dtype='float',
