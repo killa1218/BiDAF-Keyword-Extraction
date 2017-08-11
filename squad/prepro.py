@@ -24,6 +24,7 @@ def get_args():
     glove_dir = os.path.join(home, "data", "glove")
     parser.add_argument('-s', "--source_dir", default=source_dir)
     parser.add_argument('-t', "--target_dir", default=target_dir)
+    parser.add_argument("--train_name", default='train-v1.1.json')
     parser.add_argument('-d', "--debug", action='store_true')
     parser.add_argument("--train_ratio", default=0.9, type=int)
     parser.add_argument("--glove_corpus", default="6B")
@@ -35,6 +36,7 @@ def get_args():
     parser.add_argument("--url", default="vision-server2.corp.ai2", type=str)
     parser.add_argument("--port", default=8000, type=int)
     parser.add_argument("--split", action='store_true')
+    parser.add_argument("--suffix", default="")
     # TODO : put more args here
     return parser.parse_args()
 
@@ -43,9 +45,9 @@ def create_all(args):
     out_path = os.path.join(args.source_dir, "all-v1.1.json")
     if os.path.exists(out_path):
         return
-    train_path = os.path.join(args.source_dir, "train-v1.1.json")
+    train_path = os.path.join(args.source_dir, args.train_name)
     train_data = json.load(open(train_path, 'r'))
-    dev_path = os.path.join(args.source_dir, "dev-v1.1.json")
+    dev_path = os.path.join(args.source_dir, args.dev_name)
     dev_data = json.load(open(dev_path, 'r'))
     train_data['data'].extend(dev_data['data'])
     print("dumping all data ...")
@@ -121,10 +123,11 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
     if not args.split:
         sent_tokenize = lambda para: [para]
 
-    source_path = in_path or os.path.join(args.source_dir, "{}-v1.1.json".format(data_type))
+    source_path = in_path or os.path.join(args.source_dir, "{}-{}v1.1.json".format(data_type, args.suffix))
     source_data = json.load(open(source_path, 'r'))
 
     q, cq, y, rx, rcx, ids, idxs = [], [], [], [], [], [], []
+    na = []
     cy = []
     x, cx = [], []
     answerss = []
@@ -164,6 +167,7 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
             for qa in para['qas']:
                 # get words
                 qi = word_tokenize(qa['question'])
+                qi = process_tokens(qi)
                 cqi = [list(qij) for qij in qi]
                 yi = []
                 cyi = []
@@ -194,6 +198,13 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
                     yi.append([yi0, yi1])
                     cyi.append([cyi0, cyi1])
 
+                if len(qa['answers']) == 0:
+                    yi.append([(0, 0), (0, 1)])
+                    cyi.append([0, 1])
+                    na.append(True)
+                else:
+                    na.append(False)
+
                 for qij in qi:
                     word_counter[qij] += 1
                     lower_word_counter[qij.lower()] += 1
@@ -210,23 +221,21 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
                 idxs.append(len(idxs))
                 answerss.append(answers)
 
-            if args.debug:
-                break
+        if args.debug:
+            break
 
     word2vec_dict = get_word2vec(args, word_counter)
     lower_word2vec_dict = get_word2vec(args, lower_word_counter)
 
     # add context here
     data = {'q': q, 'cq': cq, 'y': y, '*x': rx, '*cx': rcx, 'cy': cy,
-            'idxs': idxs, 'ids': ids, 'answerss': answerss, '*p': rx}
+            'idxs': idxs, 'ids': ids, 'answerss': answerss, '*p': rx, 'na': na}
     shared = {'x': x, 'cx': cx, 'p': p,
               'word_counter': word_counter, 'char_counter': char_counter, 'lower_word_counter': lower_word_counter,
               'word2vec': word2vec_dict, 'lower_word2vec': lower_word2vec_dict}
 
     print("saving ...")
     save(args, data, shared, out_name)
-
-
 
 if __name__ == "__main__":
     main()
