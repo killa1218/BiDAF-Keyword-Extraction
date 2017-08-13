@@ -25,8 +25,11 @@ class Trainer(object):
         _, ds = batch
         feed_dict = self.model.get_feed_dict(ds, True)
         if get_summary:
-            loss, summary, train_op = \
-                sess.run([self.loss, self.summary, self.train_op], feed_dict=feed_dict)
+            loss = sess.run(self.loss, feed_dict = feed_dict)
+            summary = sess.run(self.summary, feed_dict = feed_dict)
+            train_op = sess.run(self.train_op, feed_dict = feed_dict)
+            # loss, summary, train_op = \
+            #     sess.run([self.loss, self.summary, self.train_op], feed_dict=feed_dict)
         else:
             loss, train_op = sess.run([self.loss, self.train_op], feed_dict=feed_dict)
             summary = None

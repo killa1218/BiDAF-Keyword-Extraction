@@ -182,30 +182,35 @@ def read_data(config, data_type, ref, data_filter=None):
         word2vec_dict = shared['lower_word2vec'] if config.lower_word else shared['word2vec']
         word_counter = shared['lower_word_counter'] if config.lower_word else shared['word_counter']
         char_counter = shared['char_counter']
+        special_chars = {"-NULL-": 0,
+                         "-UNK-": 1,
+                         "-EOS-": 2,
+                         "-NEXT-": 3,
+                         }
         if config.finetune:
-            shared['word2idx'] = {word: idx + 2 for idx, word in
+            shared['word2idx'] = {word: idx + len(special_chars) for idx, word in
                                   enumerate(word for word, count in word_counter.items()
                                             if count > config.word_count_th or (config.known_if_glove and word in word2vec_dict))}
         else:
             assert config.known_if_glove
             assert config.use_glove_for_unk
-            shared['word2idx'] = {word: idx + 2 for idx, word in
+            shared['word2idx'] = {word: idx + len(special_chars) for idx, word in
                                   enumerate(word for word, count in word_counter.items()
                                             if count > config.word_count_th and word not in word2vec_dict)}
-        shared['char2idx'] = {char: idx + 2 for idx, char in
+        shared['char2idx'] = {char: idx + len(special_chars) for idx, char in
                               enumerate(char for char, count in char_counter.items()
                                         if count > config.char_count_th)}
-        NULL = "-NULL-"
-        UNK = "-UNK-"
-        shared['word2idx'][NULL] = 0
-        shared['word2idx'][UNK] = 1
-        shared['char2idx'][NULL] = 0
-        shared['char2idx'][UNK] = 1
+        for c, idx in special_chars.items():
+            shared['word2idx'][c] = idx
+            shared['char2idx'][c] = idx
+
         json.dump({'word2idx': shared['word2idx'], 'char2idx': shared['char2idx']}, open(shared_path, 'w'))
     else:
         new_shared = json.load(open(shared_path, 'r'))
         for key, val in new_shared.items():
             shared[key] = val
+    config.eos_symbol = shared['word2idx']["-EOS-"]
+    config.next_symbol = shared['word2idx']["-NEXT-"]
 
     if config.use_glove_for_unk:
         # create new word2idx and word2vec
@@ -219,6 +224,8 @@ def read_data(config, data_type, ref, data_filter=None):
         # print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
         new_emb_mat = np.array([idx2vec_dict[idx] for idx in range(len(idx2vec_dict))], dtype='float32')
         shared['new_emb_mat'] = new_emb_mat
+        print("new_emb_size: ", len(new_emb_mat))
+    print("word2idx emb size: ", len(shared['word2idx']), ", max idx:", max(shared['word2idx'].values()))
 
     data_set = DataSet(data, data_type, shared=shared, valid_idxs=valid_idxs)
     return data_set
@@ -227,10 +234,8 @@ def read_data(config, data_type, ref, data_filter=None):
 def get_squad_data_filter(config):
     def data_filter(data_point, shared):
         assert shared is not None
-        rx, rcx, q, cq, y = (data_point[key] for key in ('*x', '*cx', 'q', 'cq', 'y'))
+        rx, rcx, y = (data_point[key] for key in ('*x', '*cx', 'y'))
         x, cx = shared['x'], shared['cx']
-        if len(q) > config.ques_size_th:
-            return False
 
         # x filter
         xi = x[rx[0]][rx[1]]
@@ -288,15 +293,11 @@ def update_config(config, data_sets):
         shared = data_set.shared
         for idx in data_set.valid_idxs:
             rx = data['*x'][idx]
-            q = data['q'][idx]
             sents = shared['x'][rx[0]][rx[1]]
             config.max_para_size = max(config.max_para_size, sum(map(len, sents)))
             config.max_num_sents = max(config.max_num_sents, len(sents))
             config.max_sent_size = max(config.max_sent_size, max(map(len, sents)))
             config.max_word_size = max(config.max_word_size, max(len(word) for sent in sents for word in sent))
-            if len(q) > 0:
-                config.max_ques_size = max(config.max_ques_size, len(q))
-                config.max_word_size = max(config.max_word_size, max(len(word) for word in q))
 
     if config.mode == 'train':
         config.max_num_sents = min(config.max_num_sents, config.num_sents_th)
