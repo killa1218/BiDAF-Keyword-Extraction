@@ -12,6 +12,9 @@ from my.tensorflow.nn import softsel, get_logits, highway_network, multi_conv1d
 from my.tensorflow.rnn import bidirectional_dynamic_rnn
 from my.tensorflow.rnn_cell import SwitchableDropoutWrapper, AttentionCell
 
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 def get_multi_gpu_models(config):
     models = []
     with tf.variable_scope(""):
@@ -71,14 +74,14 @@ class Model(object):
     def _build_forward(self):
         config = self.config
         # M === 1
-        N, M, JX, JQ, VW, VC, d, W = \
+        N, M, JX, VW, VC, d, W = \
             config.batch_size, config.max_num_sents, config.max_sent_size, \
-            config.max_ques_size, config.word_vocab_size, config.char_vocab_size, config.hidden_size, \
+            config.word_vocab_size, config.char_vocab_size, config.hidden_size, \
             config.max_word_size
-        print("VW:", VW, "N:", N, "M:", M, "JX:", JX, "JQ:", JQ)
+
         JX = tf.shape(self.x)[2]
         M = tf.shape(self.x)[1]
-        print("VW:", VW, "N:", N, "M:", M, "JX:", JX, "JQ:", JQ)
+
         dc, dw, dco = config.char_emb_size, config.word_emb_size, config.char_out_size # dco is the output size of char CNN
 
         with tf.variable_scope("emb"):
@@ -96,7 +99,7 @@ class Model(object):
                     assert sum(filter_sizes) == dco, (filter_sizes, dco)
                     with tf.variable_scope("conv"):
                         xx = multi_conv1d(Acx, filter_sizes, heights, "VALID",  self.is_train, config.keep_prob, scope="xx") # self defined
-                        xx = tf.reshape(xx, [-1, M, JX, dco]) # context char cnn 结果 size(dco) == 100
+                        xx = tf.reshape(xx, [-1, M, JX, dco]) # context char cnn 结果 dco == 100
 
             # Word Embedding
             if config.use_word_emb:
@@ -115,7 +118,7 @@ class Model(object):
                     self.tensor_dict['x'] = Ax
                 # Concat Char-CNN Embedding and Word Embedding
                 if config.use_char_emb:
-                    xx = tf.concat([xx, Ax], 3)  # [N, M, JX, di]
+                    xx = tf.concat([xx, Ax], 3)  # [N, M, JX, dw + dco]
                 else:
                     xx = Ax
 
@@ -125,15 +128,15 @@ class Model(object):
                 xx = highway_network(xx, config.highway_num_layers, True, wd=config.wd, is_train=self.is_train)
                 tf.get_variable_scope().reuse_variables()
 
-        self.tensor_dict['xx'] = xx
+        self.tensor_dict['xx'] = xx # [N, M, JX, dw + dco]
 
         # Bidirection-LSTM (3rd layer on paper)
         cell_fw = BasicLSTMCell(d, state_is_tuple=True)
         cell_bw = BasicLSTMCell(d, state_is_tuple=True)
         cell2_fw = BasicLSTMCell(d, state_is_tuple=True)
-        cell2_bw = BasicLSTMCell(d, state_is_tuple=True)
-        cell3_fw = BasicLSTMCell(d, state_is_tuple=True)
-        cell3_bw = BasicLSTMCell(d, state_is_tuple=True)
+        # cell2_bw = BasicLSTMCell(d, state_is_tuple=True)
+        # cell3_fw = BasicLSTMCell(d, state_is_tuple=True)
+        # cell3_bw = BasicLSTMCell(d, state_is_tuple=True)
         cell4_fw = BasicLSTMCell(d, state_is_tuple=True)
         cell4_bw = BasicLSTMCell(d, state_is_tuple=True)
         d_cell4_fw = SwitchableDropoutWrapper(cell4_fw, self.is_train, input_keep_prob=config.input_keep_prob)
@@ -152,26 +155,30 @@ class Model(object):
             hh = tf.reshape(h, [-1, JX, 2 * d])
             x_mask = self.x_mask
 
-            with tf.variable_scope("first_cell_fw"):
-                first_cell_fw = AttentionCell(cell2_fw, hh, 2 * d, mask=x_mask, mapper='sim',
-                                              input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
-            with tf.variable_scope("first_cell_bw"):
-                first_cell_bw = AttentionCell(cell2_bw, hh, 2 * d, mask=x_mask, mapper='sim',
-                                              input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
-            with tf.variable_scope("second_cell_fw"):
-                second_cell_fw = AttentionCell(cell3_fw, hh, 2 * d, mask=x_mask, mapper='sim',
-                                               input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
-            with tf.variable_scope("second_cell_bw"):
-                second_cell_bw = AttentionCell(cell3_bw, hh, 2 * d, mask=x_mask, mapper='sim',
-                                               input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+        # with tf.variable_scope("first_cell_fw"):
+            first_cell_fw = AttentionCell(cell2_fw, hh, 2 * d, mask=x_mask, mapper='sim',
+                                          input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+        # with tf.variable_scope("first_cell_bw"):
+        #     first_cell_bw = AttentionCell(cell2_bw, hh, 2 * d, mask=x_mask, mapper='sim',
+        #                                   input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+        # # with tf.variable_scope("second_cell_fw"):
+        #     second_cell_fw = AttentionCell(cell3_fw, hh, 2 * d, mask=x_mask, mapper='sim',
+        #                                    input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+        # # with tf.variable_scope("second_cell_bw"):
+        #     second_cell_bw = AttentionCell(cell3_bw, hh, 2 * d, mask=x_mask, mapper='sim',
+        #                                    input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+
+            first_cell_bw = first_cell_fw
+            second_cell_fw = first_cell_bw
+            second_cell_bw = first_cell_bw
 
         # Modeling layer (5th layer on paper)
             (fw_g0, bw_g0), _ = bidirectional_dynamic_rnn(first_cell_fw, first_cell_bw, p0, x_len, dtype='float',
                                                           scope='g0')  # [N, M, JX, 2d]
-            g0 = tf.concat(axis=3, values=[fw_g0, bw_g0]) # [N, M, JX, 4d]
+            g0 = tf.concat(axis=3, values=[fw_g0, bw_g0]) # [N, M, JX, 2d]
             (fw_g1, bw_g1), _ = bidirectional_dynamic_rnn(second_cell_fw, second_cell_bw, g0, x_len, dtype='float',
                                                           scope='g1')  # [N, M, JX, 2d]
-            g1 = tf.concat(axis=3, values=[fw_g1, bw_g1]) # [N, M, JX, 4d]
+            g1 = tf.concat(axis=3, values=[fw_g1, bw_g1]) # [N, M, JX, 2d]
 
         # Output layer (Last layer on paper)
         with tf.variable_scope("output"):
@@ -205,8 +212,6 @@ class Model(object):
             self.wyp = wyp
 
     def _build_loss(self):
-        N = self.config.batch_size
-        config = self.config
         JX = tf.shape(self.x)[2]
         M = tf.shape(self.x)[1]
 
@@ -215,8 +220,8 @@ class Model(object):
             logits=self.logits, labels=tf.cast(tf.reshape(self.y, [-1, M * JX]), 'float'))
         losses2 = tf.nn.softmax_cross_entropy_with_logits(
             logits=self.logits2, labels=tf.cast(tf.reshape(self.y2, [-1, M * JX]), 'float'))
-        ce_loss = tf.reduce_mean(loss_mask * losses)
-        ce_loss2 = tf.reduce_mean(loss_mask * losses2)
+        ce_loss = tf.reduce_mean(loss_mask * tf.expand_dims(losses, 1))
+        ce_loss2 = tf.reduce_mean(loss_mask * tf.expand_dims(losses2, 1))
         tf.add_to_collection('losses', ce_loss)
         tf.add_to_collection("losses", ce_loss2)
 

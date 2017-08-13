@@ -6,7 +6,7 @@ from my.tensorflow import flatten, reconstruct, add_wd, exp_mask
 
 
 def linear(args, output_size, bias, bias_start=0.0, scope=None, squeeze=False, wd=0.0, input_keep_prob=1.0,
-           is_train=None):
+           is_train=None, share=False):
     if args is None or (nest.is_sequence(args) and not args):
         raise ValueError("`args` must be specified")
     if not nest.is_sequence(args):
@@ -19,6 +19,8 @@ def linear(args, output_size, bias, bias_start=0.0, scope=None, squeeze=False, w
                      for arg in flat_args]
     with tf.variable_scope(scope or 'Linear'):
         flat_out = _linear(flat_args, output_size, bias, bias_initializer=tf.constant_initializer(bias_start))
+        if share:
+            tf.get_variable_scope().reuse_variables()
     out = reconstruct(flat_out, args[0], 1)
     if squeeze:
         out = tf.squeeze(out, [len(args[0].get_shape().as_list())-1])

@@ -131,8 +131,9 @@ class AttentionCell(RNNCell):
         if controller is None:
             controller = AttentionCell.get_double_linear_controller(size, True,
                                                                     input_keep_prob=input_keep_prob, is_train=is_train)
-            self.A_m = linear(self._memory, size, True, scope='memory_prepare',
-                    input_keep_prob=input_keep_prob, is_train=is_train)   # [N * M, JX, d] this is W_v*v
+            self.get_A_m = AttentionCell.get_attention_weight(size, True, scope='memory_prepare',
+                    input_keep_prob=input_keep_prob, is_train=is_train)
+
         self._controller = controller
         if mapper is None:
             mapper = AttentionCell.get_concat_mapper()
@@ -150,10 +151,18 @@ class AttentionCell(RNNCell):
 
     def __call__(self, inputs, state, scope=None):
         with tf.variable_scope(scope or "AttentionCell"):
+            self.A_m = self.get_A_m(self._memory)
             memory_logits = self._controller(inputs, state, self.A_m) # [N * M, JX]
             sel_mem = softsel(self._flat_memory, memory_logits, mask=self._flat_mask)  # [N, m]
             new_inputs = self._mapper(inputs, sel_mem)
             return self._cell(new_inputs, state)
+
+    @staticmethod
+    def get_attention_weight(size, bias, scope, input_keep_prob, is_train):
+        def attention_weight(memory):
+            return linear(memory, size, bias, scope = 'memory_prepare',
+                              input_keep_prob = input_keep_prob, is_train = is_train)  # [N * M, JX, d] this is W_v*v
+        return attention_weight
 
     @staticmethod
     def get_double_linear_controller(size, bias, input_keep_prob=1.0, is_train=None):
@@ -168,7 +177,7 @@ class AttentionCell(RNNCell):
             if isinstance(state, LSTMStateTuple):
                 in_ = tf.concat([inputs, state.c, state.h], -1)
             else:
-                in_ = tf.concat([inputs, state], -1) # TODO 为什么要拼起来
+                in_ = tf.concat([inputs, state], -1)
             A_IS = linear(in_, size, bias, scope='first',
                     input_keep_prob=input_keep_prob, is_train=is_train)
 
