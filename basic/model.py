@@ -133,10 +133,18 @@ class Model(object):
         # Bidirection-LSTM (3rd layer on paper)
         cell_fw = BasicLSTMCell(d, state_is_tuple=True)
         cell_bw = BasicLSTMCell(d, state_is_tuple=True)
+
+        # if config.no_att:
+        #     cell2_fw = BasicLSTMCell(2 * d, state_is_tuple = True)
+        #     cell2_bw = BasicLSTMCell(2 * d, state_is_tuple = True)
+        #     cell3_fw = BasicLSTMCell(2 * d, state_is_tuple = True)
+        #     cell3_bw = BasicLSTMCell(2 * d, state_is_tuple = True)
+        # else:
         cell2_fw = BasicLSTMCell(d, state_is_tuple=True)
-        # cell2_bw = BasicLSTMCell(d, state_is_tuple=True)
-        # cell3_fw = BasicLSTMCell(d, state_is_tuple=True)
-        # cell3_bw = BasicLSTMCell(d, state_is_tuple=True)
+        cell2_bw = BasicLSTMCell(d, state_is_tuple=True)
+        cell3_fw = BasicLSTMCell(d, state_is_tuple=True)
+        cell3_bw = BasicLSTMCell(d, state_is_tuple=True)
+
         cell4_fw = BasicLSTMCell(d, state_is_tuple=True)
         cell4_bw = BasicLSTMCell(d, state_is_tuple=True)
         d_cell4_fw = SwitchableDropoutWrapper(cell4_fw, self.is_train, input_keep_prob=config.input_keep_prob)
@@ -146,31 +154,31 @@ class Model(object):
 
         with tf.variable_scope("prepro"):
             (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell_fw, cell_bw, xx, x_len, dtype='float', scope='h1')  # [N, M, JX, 2d]
-            h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
-            self.tensor_dict['h'] = h
 
         # Attention Flow Layer (4th layer on paper)
         with tf.variable_scope("main"):
-            p0 = h
-            hh = tf.reshape(h, [-1, JX, 2 * d])
             x_mask = self.x_mask
 
-        # with tf.variable_scope("first_cell_fw"):
-            first_cell_fw = AttentionCell(cell2_fw, hh, 2 * d, mask=x_mask, mapper='sim',
-                                          input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
-        # with tf.variable_scope("first_cell_bw"):
-        #     first_cell_bw = AttentionCell(cell2_bw, hh, 2 * d, mask=x_mask, mapper='sim',
-        #                                   input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
-        # # with tf.variable_scope("second_cell_fw"):
-        #     second_cell_fw = AttentionCell(cell3_fw, hh, 2 * d, mask=x_mask, mapper='sim',
-        #                                    input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
-        # # with tf.variable_scope("second_cell_bw"):
-        #     second_cell_bw = AttentionCell(cell3_bw, hh, 2 * d, mask=x_mask, mapper='sim',
-        #                                    input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+            if config.no_att:
+                h = fw_h + bw_h
+                first_cell_fw = cell2_fw
+                first_cell_bw = cell2_bw
+                second_cell_fw = cell3_fw
+                second_cell_bw = cell3_bw
+            else:
+                h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
+                hh = tf.reshape(h, [-1, JX, 2 * d])
+                first_cell_fw = AttentionCell(cell2_fw, hh, 2 * d, mask=x_mask, mapper='sim',
+                                              input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+                first_cell_bw = AttentionCell(cell2_bw, hh, 2 * d, mask=x_mask, mapper='sim',
+                                              input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+                second_cell_fw = AttentionCell(cell3_fw, hh, 2 * d, mask=x_mask, mapper='sim',
+                                               input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
+                second_cell_bw = AttentionCell(cell3_bw, hh, 2 * d, mask=x_mask, mapper='sim',
+                                               input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
 
-            first_cell_bw = first_cell_fw
-            second_cell_fw = first_cell_bw
-            second_cell_bw = first_cell_bw
+            p0 = h
+            self.tensor_dict['h'] = h
 
         # Modeling layer (5th layer on paper)
             (fw_g0, bw_g0), _ = bidirectional_dynamic_rnn(first_cell_fw, first_cell_bw, p0, x_len, dtype='float',
