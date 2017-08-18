@@ -52,7 +52,7 @@ def softmax(logits, mask=None, scope=None):
 
 def softsel(target, logits, mask=None, scope=None):
     """
-
+    Do softmax to logits and apply weighted sum to target.
     :param target: [ ..., J, d] dtype=float
     :param logits: [ ..., J], dtype=float
     :param mask: [ ..., J], dtype=bool
