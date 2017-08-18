@@ -55,6 +55,7 @@ flags.DEFINE_integer("highway_num_layers", 2, "highway num layers [2]")
 flags.DEFINE_bool("share_cnn_weights", True, "Share Char-CNN weights [True]")
 flags.DEFINE_bool("share_lstm_weights", True, "Share pre-processing (phrase-level) LSTM weights [True]")
 flags.DEFINE_float("var_decay", 0.999, "Exponential moving average decay for variables [0.999]")
+flags.DEFINE_float("attention_dim", 200, "Middle dim of attention [200]")
 
 # Optimizations
 flags.DEFINE_bool("cluster", False, "Cluster data for faster training [False]")
@@ -100,6 +101,7 @@ flags.DEFINE_bool("q2c_att", True, "question-to-context attention? [True]")
 flags.DEFINE_bool("c2q_att", True, "context-to-question attention? [True]")
 flags.DEFINE_bool("dynamic_att", False, "Dynamic attention [False]")
 flags.DEFINE_bool("no_att", True, "No attention [True]")
+flags.DEFINE_bool("self_matching_attention", True, "Self matching attention [True]")
 
 
 def main(_):

@@ -4,6 +4,24 @@ import tensorflow as tf
 
 from my.tensorflow import flatten, reconstruct, add_wd, exp_mask
 
+def batch_linear(args, output_size, bias, bias_start=0.0, scope=None, input_keep_prob=1.0, is_train=None):
+    assert(isinstance(args, tf.Tensor))
+    assert(args.get_shape().ndims == 3)
+
+    if input_keep_prob < 1.0:
+        assert is_train is not None
+        args = tf.cond(is_train, lambda: tf.nn.dropout(args, input_keep_prob), lambda: args)
+
+    batch_list = tf.unstack(args, axis = 0)
+    linear_list = []
+
+    with tf.variable_scope(scope or "batch_linear"):
+        for batch in batch_list:
+            linear_list.append(_linear(batch, output_size, bias, bias_initializer = tf.constant_initializer(bias_start)))
+            tf.get_variable_scope().reuse_variables()
+
+    return tf.stack(linear_list, axis = 0, name = "batch_linear")
+
 
 def linear(args, output_size, bias, bias_start=0.0, scope=None, squeeze=False, wd=0.0, input_keep_prob=1.0,
            is_train=None, share=False):

@@ -8,7 +8,7 @@ from tensorflow.contrib.rnn import BasicLSTMCell, LSTMStateTuple
 
 from basic.read_data import DataSet
 from my.tensorflow import get_initializer
-from my.tensorflow.nn import softsel, get_logits, highway_network, multi_conv1d
+from my.tensorflow.nn import softsel, get_logits, highway_network, multi_conv1d, batch_linear
 from my.tensorflow.rnn import bidirectional_dynamic_rnn
 from my.tensorflow.rnn_cell import SwitchableDropoutWrapper, AttentionCell
 
@@ -34,19 +34,18 @@ class Model(object):
                                            initializer=tf.constant_initializer(0), trainable=False)
 
         # Define forward inputs here
-        # N, M, JX, JQ, VW, VC, W = \
-        batchSize, maxStcNum, maxStcLen, maxQueLen, VW, VC, W = \
+        N, M, JX, VW, VC, W = \
             config.batch_size, config.max_num_sents, config.max_sent_size, \
-            config.max_ques_size, config.word_vocab_size, config.char_vocab_size, config.max_word_size
-        self.x = tf.placeholder('int32', [batchSize, None, None], name='x') # [batchSize, maxStcNum, maxStcLen]
-        self.cx = tf.placeholder('int32', [batchSize, None, None, W], name='cx') # char index, used for indexing char embedding
-        self.x_mask = tf.placeholder('bool', [batchSize, None, None], name='x_mask')
-        self.y = tf.placeholder('bool', [batchSize, None, None], name='y')
-        self.y2 = tf.placeholder('bool', [batchSize, None, None], name='y2')
-        self.wy = tf.placeholder('bool', [batchSize, None, None], name='wy')
+            config.word_vocab_size, config.char_vocab_size, config.max_word_size
+        self.x = tf.placeholder('int32', [N, M, JX], name='x') # [N, M, JX]
+        self.cx = tf.placeholder('int32', [N, M, JX, W], name='cx') # char index, used for indexing char embedding
+        self.x_mask = tf.placeholder('bool', [N, M, JX], name='x_mask') # [N, M, JX]
+        self.y = tf.placeholder('bool', [N, M, JX], name='y')
+        self.y2 = tf.placeholder('bool', [N, M, JX], name='y2')
+        self.wy = tf.placeholder('bool', [N, M, JX], name='wy')
         self.is_train = tf.placeholder('bool', [], name='is_train')
         self.new_emb_mat = tf.placeholder('float', [None, config.word_emb_size], name='new_emb_mat') # word embedding storage(idx2vec)
-        self.na = tf.placeholder('bool', [batchSize], name='na')
+        self.na = tf.placeholder('bool', [N], name='na')
 
         # Define misc
         self.tensor_dict = {}
@@ -78,9 +77,6 @@ class Model(object):
             config.batch_size, config.max_num_sents, config.max_sent_size, \
             config.word_vocab_size, config.char_vocab_size, config.hidden_size, \
             config.max_word_size
-
-        JX = tf.shape(self.x)[2]
-        M = tf.shape(self.x)[1]
 
         dc, dw, dco = config.char_emb_size, config.word_emb_size, config.char_out_size # dco is the output size of char CNN
 
@@ -133,18 +129,6 @@ class Model(object):
         # Bidirection-LSTM (3rd layer on paper)
         cell_fw = BasicLSTMCell(d, state_is_tuple=True)
         cell_bw = BasicLSTMCell(d, state_is_tuple=True)
-
-        # if config.no_att:
-        #     cell2_fw = BasicLSTMCell(2 * d, state_is_tuple = True)
-        #     cell2_bw = BasicLSTMCell(2 * d, state_is_tuple = True)
-        #     cell3_fw = BasicLSTMCell(2 * d, state_is_tuple = True)
-        #     cell3_bw = BasicLSTMCell(2 * d, state_is_tuple = True)
-        # else:
-        cell2_fw = BasicLSTMCell(d, state_is_tuple=True)
-        cell2_bw = BasicLSTMCell(d, state_is_tuple=True)
-        cell3_fw = BasicLSTMCell(d, state_is_tuple=True)
-        cell3_bw = BasicLSTMCell(d, state_is_tuple=True)
-
         cell4_fw = BasicLSTMCell(d, state_is_tuple=True)
         cell4_bw = BasicLSTMCell(d, state_is_tuple=True)
         d_cell4_fw = SwitchableDropoutWrapper(cell4_fw, self.is_train, input_keep_prob=config.input_keep_prob)
@@ -155,19 +139,55 @@ class Model(object):
         with tf.variable_scope("prepro"):
             (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell_fw, cell_bw, xx, x_len, dtype='float', scope='h1')  # [N, M, JX, 2d]
 
-        # Attention Flow Layer (4th layer on paper)
-        with tf.variable_scope("main"):
-            x_mask = self.x_mask
+        # Attention Layer (4th layer on paper)
+        with tf.variable_scope("attention"):
+            x_mask = tf.cast(tf.reshape(self.x_mask, [N * M, 1, JX]), "float32")
 
-            if config.no_att:
-                h = fw_h + bw_h
-                first_cell_fw = cell2_fw
-                first_cell_bw = cell2_bw
-                second_cell_fw = cell3_fw
-                second_cell_bw = cell3_bw
+            if config.self_matching_attention: # s = v*tanh(Wh+Wh)
+                h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
+                fh = tf.reshape(h, [-1, JX, 2 * d]) # [N * M, JX, 2d]
+                Ad = config.attention_dim # Attention middle variable dimension
+
+                wh1 = batch_linear(fh, Ad, bias = True, scope = "att_first") # [N * M, JX, Ad]
+                wh2 = batch_linear(fh, Ad, bias = True, scope = "att_second") # [N * M, JX, Ad]
+
+                iter_sum = tf.add(
+                    tf.expand_dims(wh1, 1),
+                    tf.expand_dims(wh2, 2)
+                ) # [N * M, JX, JX, Ad]
+
+                v = tf.get_variable("v", shape = [1, 1, 1, Ad], dtype = tf.float32)
+                s = tf.reduce_sum(tf.multiply(v, tf.tanh(iter_sum)), -1) # [N * M, JX, JX]
+
+                masked_exps = tf.multiply(tf.exp(s), x_mask)
+                exps_sum = tf.reduce_sum(masked_exps, -1)
+                softmax_s = tf.div(masked_exps, tf.expand_dims(exps_sum, 1)) # [N * M, JX, JX]
+                weighted_sum = tf.reduce_sum(
+                    tf.multiply(
+                        tf.expand_dims(softmax_s, 3), # [N * M, JX, JX, 1]
+                        tf.expand_dims(fh, 1) # [N * M, 1, JX, 2d]
+                    ), # [N * M, JX, JX, 2d]
+                    axis = 2
+                )
+                h = tf.reshape(weighted_sum, [N, M, JX, 2 * d])
+
+                first_cell_fw = BasicLSTMCell(2 * d, state_is_tuple=True)
+                first_cell_bw = BasicLSTMCell(2 * d, state_is_tuple=True)
+                second_cell_fw = BasicLSTMCell(2 * d, state_is_tuple=True)
+                second_cell_bw = BasicLSTMCell(2 * d, state_is_tuple=True)
+            elif config.no_att:
+                h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
+                first_cell_fw = BasicLSTMCell(2 * d, state_is_tuple=True)
+                first_cell_bw = BasicLSTMCell(2 * d, state_is_tuple=True)
+                second_cell_fw = BasicLSTMCell(2 * d, state_is_tuple=True)
+                second_cell_bw = BasicLSTMCell(2 * d, state_is_tuple=True)
             else:
                 h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
                 hh = tf.reshape(h, [-1, JX, 2 * d])
+                cell2_fw = BasicLSTMCell(d, state_is_tuple=True)
+                cell2_bw = BasicLSTMCell(d, state_is_tuple=True)
+                cell3_fw = BasicLSTMCell(d, state_is_tuple=True)
+                cell3_bw = BasicLSTMCell(d, state_is_tuple=True)
                 first_cell_fw = AttentionCell(cell2_fw, hh, 2 * d, mask=x_mask, mapper='sim',
                                               input_keep_prob=self.config.input_keep_prob, is_train=self.is_train)
                 first_cell_bw = AttentionCell(cell2_bw, hh, 2 * d, mask=x_mask, mapper='sim',
@@ -192,7 +212,7 @@ class Model(object):
         with tf.variable_scope("output"):
             logits = get_logits([g1, p0], d, True, wd=config.wd, input_keep_prob=config.input_keep_prob,
                                 mask=self.x_mask, is_train=self.is_train, func=config.answer_func, scope='logits1')
-            a1i = softsel(tf.reshape(g1, [N, M * JX, 2 * d]), tf.reshape(logits, [N, M * JX])) # do softmax in the whole passage scope
+            a1i = softsel(tf.reshape(g1, [N, M * JX, -1]), tf.reshape(logits, [N, M * JX])) # do softmax in the whole passage scope
             a1i = tf.tile(tf.expand_dims(tf.expand_dims(a1i, 1), 1), [1, M, JX, 1])
 
             (fw_g2, bw_g2), _ = bidirectional_dynamic_rnn(d_cell4_fw, d_cell4_bw, tf.concat([p0, g1, a1i, g1 * a1i], 3),
