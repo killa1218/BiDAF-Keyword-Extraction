@@ -246,6 +246,10 @@ class Model(object):
             logits=self.logits, labels=tf.cast(tf.reshape(self.y, [-1, M * JX]), 'float'))
         losses2 = tf.nn.softmax_cross_entropy_with_logits(
             logits=self.logits2, labels=tf.cast(tf.reshape(self.y2, [-1, M * JX]), 'float'))
+
+        self.losses = losses
+        self.losses2 = losses2
+
         ce_loss = tf.reduce_mean(loss_mask * tf.expand_dims(losses, 1))
         ce_loss2 = tf.reduce_mean(loss_mask * tf.expand_dims(losses2, 1))
         tf.add_to_collection('losses', ce_loss)
@@ -340,10 +344,7 @@ class Model(object):
             wy = np.zeros([N, M, JX], dtype='bool')
             na = np.zeros([N], dtype='bool')
 
-            for i, (xi, cxi, yi, nai) in enumerate(zip(X, CX, batch.data['y'], batch.data['na'])):
-                if nai:
-                    na[i] = nai
-                    continue
+            for i, (xi, cxi, yi) in enumerate(zip(X, CX, batch.data['y'])):
                 start_idx, stop_idx = random.choice(yi)
                 j, k = start_idx
                 j2, k2 = stop_idx
