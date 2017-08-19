@@ -138,13 +138,13 @@ class Model(object):
 
         with tf.variable_scope("prepro"):
             (fw_h, bw_h), _ = bidirectional_dynamic_rnn(cell_fw, cell_bw, xx, x_len, dtype='float', scope='h1')  # [N, M, JX, 2d]
+            h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
 
         # Attention Layer (4th layer on paper)
         with tf.variable_scope("attention"):
             x_mask = tf.cast(tf.reshape(self.x_mask, [N * M, 1, JX]), "float32")
 
             if config.self_matching_attention: # s = v*tanh(Wh+Wh)
-                h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
                 fh = tf.reshape(h, [-1, JX, 2 * d]) # [N * M, JX, 2d]
                 Ad = config.attention_dim # Attention middle variable dimension
 
@@ -176,13 +176,11 @@ class Model(object):
                 second_cell_fw = BasicLSTMCell(2 * d, state_is_tuple=True)
                 second_cell_bw = BasicLSTMCell(2 * d, state_is_tuple=True)
             elif config.no_att:
-                h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
                 first_cell_fw = BasicLSTMCell(2 * d, state_is_tuple=True)
                 first_cell_bw = BasicLSTMCell(2 * d, state_is_tuple=True)
                 second_cell_fw = BasicLSTMCell(2 * d, state_is_tuple=True)
                 second_cell_bw = BasicLSTMCell(2 * d, state_is_tuple=True)
             else:
-                h = tf.concat([fw_h, bw_h], 3)  # [N, M, JX, 2d]
                 hh = tf.reshape(h, [-1, JX, 2 * d])
                 cell2_fw = BasicLSTMCell(d, state_is_tuple=True)
                 cell2_bw = BasicLSTMCell(d, state_is_tuple=True)
@@ -243,7 +241,7 @@ class Model(object):
         JX = tf.shape(self.x)[2]
         M = tf.shape(self.x)[1]
 
-        loss_mask = tf.reduce_max(tf.cast(self.x_mask, 'float'), 1)
+        loss_mask = tf.reduce_max(tf.cast(self.x_mask, 'float'), 1) # [N, JX]
         losses = tf.nn.softmax_cross_entropy_with_logits(
             logits=self.logits, labels=tf.cast(tf.reshape(self.y, [-1, M * JX]), 'float'))
         losses2 = tf.nn.softmax_cross_entropy_with_logits(
@@ -341,10 +339,6 @@ class Model(object):
             y2 = np.zeros([N, M, JX], dtype='bool')
             wy = np.zeros([N, M, JX], dtype='bool')
             na = np.zeros([N], dtype='bool')
-            feed_dict[self.y] = y
-            feed_dict[self.y2] = y2
-            feed_dict[self.wy] = wy
-            feed_dict[self.na] = na
 
             for i, (xi, cxi, yi, nai) in enumerate(zip(X, CX, batch.data['y'], batch.data['na'])):
                 if nai:
@@ -369,6 +363,11 @@ class Model(object):
                 else:
                     wy[i, j, k:len(batch.data['x'][i][j])] = True
                     wy[i, j2, :k2] = True
+
+            feed_dict[self.y] = y
+            feed_dict[self.y2] = y2
+            feed_dict[self.wy] = wy
+            feed_dict[self.na] = na
 
         def _get_word(word):
             d = batch.shared['word2idx']

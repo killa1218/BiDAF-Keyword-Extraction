@@ -27,6 +27,7 @@ def get_args():
     parser.add_argument('-s', "--source_dir", default=source_dir)
     parser.add_argument('-t', "--target_dir", default=target_dir)
     parser.add_argument('-d', "--debug", action='store_true')
+    parser.add_argument('--max_len', default = None, type = float)
     parser.add_argument("--train_ratio", default=0.9, type=int)
     parser.add_argument("--glove_corpus", default="6B")
     parser.add_argument("--glove_dir", default=glove_dir)
@@ -58,22 +59,27 @@ def prepro(args):
     if not os.path.exists(args.target_dir):
         os.makedirs(args.target_dir)
 
+    if args.max_len:
+        postfix = ''
+    else:
+        postfix = str(args.max_len)
+
     if args.mode == 'full':
-        prepro_each(args, 'train', out_name='train')
-        prepro_each(args, 'valid', out_name='dev')
-        prepro_each(args, 'test', out_name='test')
+        prepro_each(args, 'train' + postfix, out_name='train')
+        prepro_each(args, 'valid' + postfix, out_name='dev')
+        prepro_each(args, 'test' + postfix, out_name='test')
     elif args.mode == 'all':
         create_all(args)
-        prepro_each(args, 'valid', 0.0, 0.0, out_name='dev')
-        prepro_each(args, 'test', 0.0, 0.0, out_name='test')
-        prepro_each(args, 'all', out_name='train')
+        prepro_each(args, 'valid' + postfix, 0.0, 0.0, out_name='dev')
+        prepro_each(args, 'test' + postfix, 0.0, 0.0, out_name='test')
+        prepro_each(args, 'all' + postfix, out_name='train')
     elif args.mode == 'single':
         assert len(args.single_path) > 0
         prepro_each(args, "NULL", out_name="single", in_path=args.single_path)
     else:
-        prepro_each(args, 'train', 0.0, args.train_ratio, out_name='train')
-        prepro_each(args, 'valid', args.train_ratio, 1.0, out_name='dev')
-        prepro_each(args, 'valid', out_name='test')
+        prepro_each(args, 'train' + postfix, 0.0, args.train_ratio, out_name='train')
+        prepro_each(args, 'valid' + postfix, args.train_ratio, 1.0, out_name='dev')
+        prepro_each(args, 'valid' + postfix, out_name='test')
 
 
 def save(args, data, shared, data_type):

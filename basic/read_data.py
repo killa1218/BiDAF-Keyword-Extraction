@@ -114,8 +114,13 @@ class DataSet(object):
     def get_multi_batches(self, batch_size, num_batches_per_step, num_steps=None, shuffle=False, cluster=False):
         batch_size_per_step = batch_size * num_batches_per_step
         batches = self.get_batches(batch_size_per_step, num_batches=num_steps, shuffle=shuffle, cluster=cluster)
-        multi_batches = (tuple(zip(grouper(idxs, batch_size, shorten=True, num_groups=num_batches_per_step),
-                         data_set.divide(num_batches_per_step))) for idxs, data_set in batches)
+        multi_batches = (
+            tuple(
+                zip(
+                    grouper(idxs, batch_size, shorten=True, num_groups=num_batches_per_step),
+                    data_set.divide(num_batches_per_step)
+                )
+            ) for idxs, data_set in batches)
         return multi_batches
 
     def get_empty(self):
