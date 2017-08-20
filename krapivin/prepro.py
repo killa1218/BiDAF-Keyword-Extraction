@@ -27,7 +27,8 @@ def get_args():
     parser.add_argument('-s', "--source_dir", default=source_dir)
     parser.add_argument('-t', "--target_dir", default=target_dir)
     parser.add_argument('-d', "--debug", action='store_true')
-    parser.add_argument('--max_len', default = None, type = float)
+    parser.add_argument('--max_len', default = '', type = str)
+    parser.add_argument('--max_num', default = 1485, type = int)
     parser.add_argument("--train_ratio", default=0.9, type=int)
     parser.add_argument("--glove_corpus", default="6B")
     parser.add_argument("--glove_dir", default=glove_dir)
@@ -141,6 +142,8 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
     start_ai = int(round(len(source_data) * start_ratio))
     stop_ai = int(round(len(source_data) * stop_ratio))
     for ai, article in enumerate(tqdm(source_data[start_ai:stop_ai])):
+        if ai == args.max_num:
+            break
         xp, cxp = [], []
         pp = []
         x.append(xp)
