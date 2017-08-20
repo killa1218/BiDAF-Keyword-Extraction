@@ -82,6 +82,7 @@ flags.DEFINE_integer("num_sents_th", 8, "num sents th [8]")
 flags.DEFINE_integer("ques_size_th", 30, "ques size th [32]")
 flags.DEFINE_integer("word_size_th", 16, "word size th [16]")
 flags.DEFINE_integer("para_size_th", 256, "para size th [256]")
+flags.DEFINE_integer("max_data_num", None, "max number of training data [None]")
 
 # Advanced training options
 flags.DEFINE_bool("lower_word", True, "lower word [True]")

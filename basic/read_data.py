@@ -180,6 +180,9 @@ def read_data(config, data_type, ref, data_filter=None):
             mask.append(data_filter(each, shared))
         valid_idxs = [idx for idx in range(len(mask)) if mask[idx]]
 
+    if config.max_data_num:
+        valid_idxs = valid_idxs[:config.max_data_num]
+
     print("Loaded {}/{} examples from {}".format(len(valid_idxs), num_examples, data_type))
 
     shared_path = config.shared_path or os.path.join(config.out_dir, "shared.json")
@@ -250,6 +253,10 @@ def get_squad_data_filter(config):
                 if stop_offset + stop[1] > config.para_size_th:
                     return False
             return True
+
+        if config.sent_size_th: # filt data items longer than
+            if len(x) > config.sent_size_th:
+                return False
 
         if config.single:
             for start, stop in y:
