@@ -101,7 +101,7 @@ flags.DEFINE_bool("q2c_att", True, "question-to-context attention? [True]")
 flags.DEFINE_bool("c2q_att", True, "context-to-question attention? [True]")
 flags.DEFINE_bool("dynamic_att", False, "Dynamic attention [False]")
 flags.DEFINE_bool("no_att", False, "No attention [True]")
-flags.DEFINE_bool("self_matching_attention", True, "Self matching attention [True]")
+flags.DEFINE_bool("self_att", True, "Self matching attention [True]")
 
 
 def main(_):

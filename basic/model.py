@@ -144,7 +144,7 @@ class Model(object):
         with tf.variable_scope("attention"):
             x_mask = tf.cast(tf.reshape(self.x_mask, [N * M, 1, JX]), "float32")
 
-            if config.self_matching_attention: # s = v*tanh(Wh+Wh)
+            if config.self_att: # s = v*tanh(Wh+Wh)
                 fh = tf.reshape(h, [-1, JX, 2 * d]) # [N * M, JX, 2d]
                 Ad = config.attention_dim # Attention middle variable dimension
 
