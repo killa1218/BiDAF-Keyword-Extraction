@@ -255,7 +255,7 @@ def get_squad_data_filter(config):
             return True
 
         if config.sent_size_th: # filt data items longer than
-            if len(x) > config.sent_size_th:
+            if len(xi[0]) > config.sent_size_th:
                 return False
 
         if config.single:
