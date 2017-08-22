@@ -21,13 +21,13 @@ def main():
 def get_args():
     parser = argparse.ArgumentParser()
     home = os.path.expanduser("~")
-    source_dir = "/mnt/dataset/KeyphraseExtraction/ClearData/krapivin/notokenize/nopunc/nostem/"
+    source_dir = "/mnt/dataset/KeyphraseExtraction/ClearData/krapivin/tokenize/nopunc/nostem/"
     target_dir = "data/krapivin"
     glove_dir = os.path.join(home, "data", "glove")
     parser.add_argument('-s', "--source_dir", default=source_dir)
     parser.add_argument('-t', "--target_dir", default=target_dir)
     parser.add_argument('-d', "--debug", action='store_true')
-    parser.add_argument('--max_len', default = '', type = str)
+    parser.add_argument('--max_len', default = '100', type = str)
     parser.add_argument('--max_num', default = None, type = int)
     parser.add_argument("--train_ratio", default=0.9, type=int)
     parser.add_argument("--glove_corpus", default="6B")
@@ -61,9 +61,9 @@ def prepro(args):
         os.makedirs(args.target_dir)
 
     if args.max_len:
-        postfix = ''
+        postfix = '_' + str(args.max_len)
     else:
-        postfix = str(args.max_len)
+        postfix = ''
 
     if args.mode == 'full':
         prepro_each(args, 'train' + postfix, out_name='train')
@@ -151,6 +151,10 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
         p.append(pp)
 
         context = article['abstract']
+
+        if isinstance(context, list):
+            context = ' '.join(context)
+
         context = context.replace("''", '" ')
         context = context.replace("``", '" ')
         xi = list(map(word_tokenize, sent_tokenize(context)))
