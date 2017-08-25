@@ -3,6 +3,12 @@ import numpy as np
 
 
 def get_2d_spans(text, tokenss):
+    '''
+    获取tokenss中每个token在text中的起始位置和结束位置， 以字符为单位, 左闭右开
+    :param text: string
+    :param tokenss: [[string, string], ...]
+    :return: [[(start, end), ...], ...]
+    '''
     spanss = []
     cur_idx = 0
     for tokens in tokenss:
@@ -20,6 +26,14 @@ def get_2d_spans(text, tokenss):
 
 
 def get_word_span(context, wordss, start, stop):
+    '''
+    获取一句话中位置在start到stop之间（字符为单位）的词们的index， index以（句子index， 词语index）返回
+    :param context: string
+    :param wordss: [[string, ...], ...]
+    :param start: int char-wise position
+    :param stop: int char-wise position
+    :return: wordss中第一个词的index， wordss中最后一个词的index
+    '''
     spanss = get_2d_spans(context, wordss)
     idxs = []
     for sent_idx, spans in enumerate(spanss):
@@ -64,6 +78,13 @@ def get_flat_idx(wordss, idx):
 
 
 def get_word_idx(context, wordss, idx):
+    '''
+    获取idx对应词语的开始位置（字符为单位）
+    :param context: string
+    :param wordss: [[string, string, ...], ...]
+    :param idx: [stc_idx, word_idx]
+    :return: int
+    '''
     spanss = get_2d_spans(context, wordss)
     return spanss[idx[0]][idx[1]][0]
 
