@@ -21,13 +21,13 @@ def main():
 def get_args():
     parser = argparse.ArgumentParser()
     home = os.path.expanduser("~")
-    source_dir = "/mnt/dataset/KeyphraseExtraction/ClearData/krapivin/tokenize/nopunc/nostem/"
-    target_dir = "data/krapivin"
+    source_dir = "/mnt/dataset/KeyphraseExtraction/ClearData/ke20k/tokenize/nopunc/nostem/"
+    target_dir = "data/ke20k"
     glove_dir = os.path.join(home, "data", "glove")
     parser.add_argument('-s', "--source_dir", default=source_dir)
     parser.add_argument('-t', "--target_dir", default=target_dir)
     parser.add_argument('-d', "--debug", action='store_true')
-    parser.add_argument('--max_len', default = '100', type = str)
+    parser.add_argument('--max_len', default = '', type = str)
     parser.add_argument('--max_num', default = None, type = int)
     parser.add_argument("--train_ratio", default=0.9, type=int)
     parser.add_argument("--glove_corpus", default="6B")
@@ -146,25 +146,28 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
             break
         xp, cxp = [], []
         pp = []
-        x.append(xp)
-        cx.append(cxp)
-        p.append(pp)
+        x.append(xp) # x: [[[[
+        cx.append(cxp) # cx: [[[[[
+        p.append(pp) # p: [["context string", ""]]
 
         context = article['abstract']
 
         if isinstance(context, list):
-            context = ' '.join(context)
+            xi = [context]
+            c = ' '.join(context)
+        else:
+            context = context.replace("''", '" ')
+            context = context.replace("``", '" ')
+            c = context
+            xi = list(map(word_tokenize, sent_tokenize(context)))
 
-        context = context.replace("''", '" ')
-        context = context.replace("``", '" ')
-        xi = list(map(word_tokenize, sent_tokenize(context)))
         xi = [process_tokens(tokens) for tokens in xi]  # process tokens
         xi = [[xijk for xijk in xij if xijk != ''] for xij in xi]
         # given xi, add chars
         cxi = [[list(xijk) for xijk in xij] for xij in xi]
         xp.append(xi)
         cxp.append(cxi)
-        pp.append(context)
+        pp.append(c)
 
         for xij in xi:
             for xijk in xij:
@@ -183,7 +186,7 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
         cyi = []
         answers = []
         for answer in article['keyphrase']:
-            answer_text = answer['text']
+            answer_text = answer['text'].strip()
             answers.append(answer_text)
             # TODO : put some function that gives word_start, word_stop here
             yi0 = (0, answer['start_position']) # keyphrase first word word index
@@ -192,35 +195,19 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
             assert len(xi[yi0[0]]) > yi0[1]
             assert len(xi[yi1[0]]) >= yi1[1]
 
-            w0 = xi[yi0[0]][yi0[1]]
-            w1 = xi[yi1[0]][yi1[1]-1]
-
-            i0 = get_word_idx(context, xi, yi0) # char index
-            i1 = get_word_idx(context, xi, (yi1[0], yi1[1]-1)) # char index
-
-            answer_start = i0
-            answer_stop = answer_start + len(answer_text)
-
-            cyi0 = answer_start - i0
-            cyi1 = answer_stop - i1 - 1
-
-            # print(answer_text, w0[cyi0:], w1[:cyi1+1])
-
-            assert answer_text[0].lower() == w0[cyi0].lower(), (answer_text, w0, cyi0)
-            assert answer_text[-1].lower() == w1[cyi1].lower()
-            assert cyi0 < 32, (answer_text, w0)
-            assert cyi1 < 32, (answer_text, w1)
+            cyi0 = 0 # 应该为0
+            cyi1 = len(answer_text.split(' ')[-1]) - 1 # answer 最后一个词的最后一个字母的位置
 
             yi.append([yi0, yi1])
             cyi.append([cyi0, cyi1])
 
-        y.append(yi)
-        cy.append(cyi)
-        rx.append(rxi)
-        rcx.append(rxi)
-        ids.append(md5(context.encode('utf8')).hexdigest()[-24:])
-        idxs.append(len(idxs))
-        answerss.append(answers)
+        y.append(yi) # y: [[[(stc_idx, start_word_idx), (stc_idx, end_word_idx)]]] 左闭右开
+        cy.append(cyi) # cy: [[[
+        rx.append(rxi) # 用于指定当前位置answer对应share中的哪个context  rx: [[
+        rcx.append(rxi) # 作用同上 rcx: [[
+        ids.append(md5(c.encode('utf8')).hexdigest()[-24:]) # ids: [
+        idxs.append(len(idxs)) # idxs: [
+        answerss.append(answers) # answer strings answerss: [["answer string", ""]]
 
         if args.debug:
             break
