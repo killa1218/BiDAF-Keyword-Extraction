@@ -88,7 +88,9 @@ def _train(config):
     graph_handler = GraphHandler(config, model)  # controls all tensors and variables in the graph, including loading /saving
 
     # Variables
-    sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
+    sessconf = tf.ConfigProto(allow_soft_placement = True, log_device_placement = False)
+    sessconf.gpu_options.allow_growth = True
+    sess = tf.Session(config=sessconf)
     graph_handler.initialize(sess)
 
     # Begin training
@@ -130,7 +132,8 @@ def _train(config):
 
 
 def _test(config):
-    test_data = read_data(config, 'test', True)
+    data_filter = get_squad_data_filter(config)
+    test_data = read_data(config, 'test', True, data_filter = data_filter)
     update_config(config, [test_data])
 
     _config_debug(config)

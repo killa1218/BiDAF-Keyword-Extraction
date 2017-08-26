@@ -168,6 +168,14 @@ def read_data(config, data_type, ref, data_filter=None):
     with open(shared_path, 'r') as fh:
         shared = json.load(fh)
 
+    if config.max_data_num:
+        tmpData = {}
+
+        for k,v in data.items():
+            tmpData[k] = v[:config.max_data_num]
+
+        data = tmpData
+
     num_examples = len(next(iter(data.values())))
     if data_filter is None:
         valid_idxs = range(num_examples)
@@ -179,9 +187,6 @@ def read_data(config, data_type, ref, data_filter=None):
             each = {key: val for key, val in zip(keys, vals)}
             mask.append(data_filter(each, shared))
         valid_idxs = [idx for idx in range(len(mask)) if mask[idx]]
-
-    if config.max_data_num:
-        valid_idxs = valid_idxs[:config.max_data_num]
 
     print("Loaded {}/{} examples from {}".format(len(valid_idxs), num_examples, data_type))
 
