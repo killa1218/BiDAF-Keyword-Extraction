@@ -285,7 +285,7 @@ class F1Evaluator(LabeledEvaluator):
         if self.config.wy:
             spans, scores = zip(*[get_best_span_wy(wypi, self.config.th) for wypi in wyp])
         else:
-            spans, scores = zip(*[get_best_span(ypi, yp2i) for ypi, yp2i in zip(yp, yp2)])
+            spans, scores = zip(*[get_best_span(ypi, yp2i) for ypi, yp2i in zip(yp, yp2)]) # yp and yp2: [N, M, JX]
 
         def _get(xi, span):
             if len(xi) <= span[0][0]:
@@ -297,20 +297,22 @@ class F1Evaluator(LabeledEvaluator):
         def _get2(context, xi, span):
             if len(xi) <= span[0][0]:
                 return ""
-            if len(xi[span[0][0]]) <= span[1][1]:
+            if len(xi[span[0][0]]) <= span[1][1]: # length of the sentence doesn't match the result.
                 return ""
             return get_phrase(context, xi, span)
 
         id2answer_dict = {id_: _get2(context, xi, span)
-                          for id_, xi, span, context in zip(data_set.data['ids'], data_set.data['x'], spans, data_set.data['p'])}
-        id2score_dict = {id_: score for id_, score in zip(data_set.data['ids'], scores)}
+                          for id_, xi, span, context in zip(data_set.data['ids'], data_set.data['x'], spans, data_set.data['p'])
+                          } # {id: String(keyphrase)}
+        id2score_dict = {id_: score for id_, score in zip(data_set.data['ids'], scores)} # {id: Float(product softmax prob)}
         id2answer_dict['scores'] = id2score_dict
+        # Following is how to calculate the f1 score
         if self.config.na:
             id2na_dict = {id_: float(each) for id_, each in zip(data_set.data['ids'], na)}
             id2answer_dict['na'] = id2na_dict
         correct = [self.__class__.compare2(yi, span) for yi, span in zip(y, spans)]
         f1s = [self.__class__.span_f1(yi, span) for yi, span in zip(y, spans)]
-        tensor_dict = dict(zip(self.tensor_dict.keys(), vals))
+        tensor_dict = dict(zip(self.tensor_dict.keys(), vals)) # Calculated tensor_dict value
         e = F1Evaluation(data_set.data_type, int(global_step), idxs, yp.tolist(), yp2.tolist(), y,
                          correct, float(loss), f1s, id2answer_dict, tensor_dict=tensor_dict)
         if self.config.wy:
@@ -335,7 +337,7 @@ class F1Evaluator(LabeledEvaluator):
 
     @staticmethod
     def compare2(yi, span):
-        for start, stop in yi:
+        for start, stop in yi: # For each keyphrase in ground truth
             if tuple(start) == span[0] and tuple(stop) == span[1]:
                 return True
         return False
@@ -343,8 +345,8 @@ class F1Evaluator(LabeledEvaluator):
     @staticmethod
     def span_f1(yi, span):
         max_f1 = 0
-        for start, stop in yi:
-            if start[0] == span[0][0]:
+        for start, stop in yi: # For each keyphrase in ground truth
+            if start[0] == span[0][0]: # In the same sentence
                 true_span = start[1], stop[1]
                 pred_span = span[0][1], span[1][1]
                 f1 = span_f1(true_span, pred_span)

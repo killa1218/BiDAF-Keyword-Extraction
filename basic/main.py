@@ -161,7 +161,7 @@ def _test(config):
     for multi_batch in tqdm(test_data.get_multi_batches(config.batch_size, config.num_gpus, num_steps=num_steps, cluster=config.cluster), total=num_steps):
         ei = evaluator.get_evaluation(sess, multi_batch)
         e = ei if e is None else e + ei
-        if config.vis:
+        if config.vis: # False
             eval_subdir = os.path.join(config.eval_dir, "{}-{}".format(ei.data_type, str(ei.global_step).zfill(6)))
             if not os.path.exists(eval_subdir):
                 os.mkdir(eval_subdir)

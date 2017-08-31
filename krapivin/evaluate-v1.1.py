@@ -55,8 +55,8 @@ def evaluate(dataset, predictions):
     f1 = exact_match = total = 0
     fe = open('./em_result1', 'w')
     for article in dataset:
-        for paragraph in article['paragraphs']:
-            for qa in paragraph['qas']:
+        for paragraph in article['abstract']:
+            for qa in article['keyphrase']:
                 total += 1
                 if qa['id'] not in predictions:
                     message = 'Unanswered question ' + qa['id'] + \
@@ -102,7 +102,7 @@ if __name__ == '__main__':
             print('Evaluation expects v-' + expected_version +
                   ', but got dataset with v-' + dataset_json['version'],
                   file=sys.stderr)
-        dataset = dataset_json['data']
+        dataset = dataset_json
     with open(args.prediction_file) as prediction_file:
         predictions = json.load(prediction_file)
     evaluate(dataset, predictions)
