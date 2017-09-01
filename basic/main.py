@@ -89,7 +89,7 @@ def _train(config):
 
     # Variables
     sessconf = tf.ConfigProto(allow_soft_placement = True, log_device_placement = False)
-    sessconf.gpu_options.allow_growth = True
+    # sessconf.gpu_options.allow_growth = True
     sess = tf.Session(config=sessconf)
     graph_handler.initialize(sess)
 
