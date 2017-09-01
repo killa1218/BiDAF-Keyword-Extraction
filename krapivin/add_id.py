@@ -1,10 +1,16 @@
 import os
 import json
+import numpy as np
 from tqdm import tqdm
+from hashlib import md5
 
-gloveFile = 'data/glove'
-vocabFile = 'data/krapivin/origin/count.json'
-dataDir = 'data/krapivin/origin'
+dataset = 'ke20k'
+
+
+gloveFile = '/home/killa/data/glove'
+vocabFile = '/mnt/dataset/KeyphraseExtraction/ClearData/' + dataset + '/tokenize/nopunc/nostem/count.json'
+newVocabFile = '/mnt/dataset/KeyphraseExtraction/ClearData/' + dataset + '/tokenize/nopunc/nostem/vocab.json'
+dataDir = '/mnt/dataset/KeyphraseExtraction/ClearData/' + dataset + '/tokenize/nopunc/nostem/'
 dim = 100
 
 def get_word2vec(glove_dir):
@@ -18,18 +24,18 @@ def get_word2vec(glove_dir):
             vector = list(map(float, array[1:]))
             word2vec_dict[word] = vector
 
-    print("{}/{} of word vocab have corresponding vectors in {}".format(len(word2vec_dict), 0, glove_path))
     return word2vec_dict
 
 w2v = get_word2vec(glove_dir = gloveFile)
+UNK = list(np.random.random([dim]))
 
 # Remove case and rebuild vocab
-with open(vocabFile, 'w') as f:
+with open(vocabFile, 'r') as f:
     vocab = json.load(f)
     idx2word = vocab['idx2word']
     word2count = vocab['word2count']
 
-    idx2vec = [[0.0] * dim, w2v['UNK']]
+    idx2vec = [[0.0] * dim, UNK]
     newIdx2word = ['ALLZERO', 'UNK']
     newWord2idx = {'ALLZERO': 0, 'UNK': 1}
     newWord2count = {}
@@ -46,15 +52,15 @@ with open(vocabFile, 'w') as f:
                 if lowerWord in w2v:
                     idx2vec.append(w2v[lowerWord])
                 else:
-                    idx2vec.append(w2v['UNK'])
+                    idx2vec.append(UNK)
 
     vocab['idx2word'] = newIdx2word
     vocab['word2idx'] = newWord2idx
     vocab['word2count'] = newWord2count
     vocab['idx2vec'] = idx2vec
 
-    json.dump(vocab, f)
-
+    with open(os.path.join(dataDir, 'vocab.json'), 'w') as ff:
+        json.dump(vocab, ff)
 
 dataFileType = [
     'train',
@@ -63,10 +69,19 @@ dataFileType = [
 ]
 # Process data files
 for dataType in dataFileType:
-    filePath = os.path.join(dataDir, dataType + '_tf_idf.json')
+    filePath = os.path.join(dataDir, dataType + '_all.json')
 
-    with open(filePath, 'w') as f:
-        data = json.load(f)['test']
+    with open(filePath, 'r') as f:
+        data = json.load(f)
 
         for d in data:
+            psg = d['abstract']
+            d['id'] = md5(' '.join(psg).encode('utf8')).hexdigest()
+            d.pop('abstract')
+            d['passage'] = psg
 
+            for kp in d['keyphrase']:
+                kp['end_position'] = kp['end_position'] + 1
+
+        with open(os.path.join(dataDir, dataType + '.json'), 'w') as ff:
+            json.dump(data, ff)
