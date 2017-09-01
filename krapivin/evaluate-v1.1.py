@@ -55,28 +55,28 @@ def evaluate(dataset, predictions):
     f1 = exact_match = total = 0
     fe = open('./em_result1', 'w')
     for article in dataset:
-        for paragraph in article['abstract']:
-            for qa in article['keyphrase']:
-                total += 1
-                if qa['id'] not in predictions:
-                    message = 'Unanswered question ' + qa['id'] + \
-                              ' will receive score 0.'
-                    print(message, file=sys.stderr)
-                    continue
-                ground_truths = list(map(lambda x: x['text'], qa['answers']))
-                hasP = 0
-                for str in ground_truths:
-                    for i, ch in enumerate(str):
-                        if ch in string.punctuation:
+        # for paragraph in article['paragraphs']:
+        for qa in article['keyphrase']:
+            total += 1
+            if qa['id'] not in predictions:
+                message = 'Unanswered question ' + qa['id'] + \
+                          ' will receive score 0.'
+                print(message, file=sys.stderr)
+                continue
+            ground_truths = list(map(lambda x: x['text'], qa['answers']))
+            hasP = 0
+            for str in ground_truths:
+                for i, ch in enumerate(str):
+                    if ch in string.punctuation:
 
-                            hasP = 1
-                prediction = predictions[qa['id']]
-                em_res = metric_max_over_ground_truths(
-                    exact_match_score, prediction, ground_truths)
-                print('%s:\t%d\t%d' % (qa['id'], em_res, hasP), file = fe)
-                exact_match += em_res
-                f1 += metric_max_over_ground_truths(
-                    f1_score, prediction, ground_truths)
+                        hasP = 1
+            prediction = predictions[qa['id']]
+            em_res = metric_max_over_ground_truths(
+                exact_match_score, prediction, ground_truths)
+            print('%s:\t%d\t%d' % (qa['id'], em_res, hasP), file = fe)
+            exact_match += em_res
+            f1 += metric_max_over_ground_truths(
+                f1_score, prediction, ground_truths)
 
     exact_match = 100.0 * exact_match / total
     f1 = 100.0 * f1 / total
