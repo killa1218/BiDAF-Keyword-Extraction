@@ -205,7 +205,8 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
         cy.append(cyi) # cy: [[[
         rx.append(rxi) # 用于指定当前位置answer对应share中的哪个context  rx: [[
         rcx.append(rxi) # 作用同上 rcx: [[
-        ids.append(md5(c.encode('utf8')).hexdigest()[-24:]) # ids: [
+        ids.append(article['id']) # ids: [
+        # ids.append(md5(c.encode('utf8')).hexdigest()[-24:]) # ids: [
         idxs.append(len(idxs)) # idxs: [
         answerss.append(answers) # answer strings answerss: [["answer string", ""]]
 
