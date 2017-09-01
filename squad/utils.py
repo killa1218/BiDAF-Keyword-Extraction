@@ -120,6 +120,11 @@ def get_best_span(ypi, yp2i):
                 max_val = val1 * val2
     return ((best_sent_idx, best_word_span[0]), (best_sent_idx, best_word_span[1] + 1)), float(max_val)
 
+def get_best_n_span(ypi, yp2i, n):
+    pairs = get_span_score_pairs(ypi, yp2i)
+    pairs.sort(key = lambda x: x[1], reverse = True)
+
+    return pairs[:n]
 
 def get_best_span_wy(wypi, th):
     chunk_spans = []
