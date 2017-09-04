@@ -74,10 +74,10 @@ def _train(config):
     # word2idx_dict = train_data.shared['word2idx']
     # idx2vec_dict = {word2idx_dict[word]: vec for word, vec in word2vec_dict.items() if word in word2idx_dict}
     idx2vec_dict = train_data.shared['idx2vec']
-    emb_mat = np.array([idx2vec_dict[idx] if idx in idx2vec_dict
-                        else np.random.multivariate_normal(np.zeros(config.word_emb_size), np.eye(config.word_emb_size))
-                        for idx in range(config.word_vocab_size)])
-    config.emb_mat = emb_mat
+    # emb_mat = np.array([idx2vec_dict[idx] if idx in idx2vec_dict
+    #                     else np.random.multivariate_normal(np.zeros(config.word_emb_size), np.eye(config.word_emb_size))
+    #                     for idx in range(config.word_vocab_size)])
+    config.emb_mat = np.array(idx2vec_dict)
 
     # construct model graph and variables (using default graph)
     pprint(config.__flags, indent=2)
