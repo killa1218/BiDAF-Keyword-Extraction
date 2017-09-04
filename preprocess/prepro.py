@@ -8,7 +8,7 @@ from collections import Counter
 
 from tqdm import tqdm
 
-from squad.utils import get_word_span, get_word_idx, process_tokens
+from .utils import get_word_span, get_word_idx, process_tokens
 
 
 def main():
