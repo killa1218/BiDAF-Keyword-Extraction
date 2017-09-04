@@ -6,8 +6,6 @@ import os
 # no metadata
 from collections import Counter
 
-from hashlib import md5
-
 from tqdm import tqdm
 
 from squad.utils import get_word_span, get_word_idx, process_tokens
@@ -21,8 +19,8 @@ def main():
 def get_args():
     parser = argparse.ArgumentParser()
     home = os.path.expanduser("~")
-    source_dir = "/mnt/dataset/KeyphraseExtraction/ClearData/ke20k/tokenize/nopunc/nostem/"
-    target_dir = "data/ke20k"
+    source_dir = "/mnt/dataset/KeyphraseExtraction/ClearData/krapivin/tokenize/nopunc/nostem/"
+    target_dir = "data/krapivin"
     glove_dir = os.path.join(home, "data", "glove")
     parser.add_argument('-s', "--source_dir", default=source_dir)
     parser.add_argument('-t', "--target_dir", default=target_dir)
@@ -90,27 +88,27 @@ def save(args, data, shared, data_type):
     json.dump(shared, open(shared_path, 'w'))
 
 
-def get_word2vec(args, word_counter):
-    glove_path = os.path.join(args.glove_dir, "glove.{}.{}d.txt".format(args.glove_corpus, args.glove_vec_size))
-    sizes = {'6B': int(4e5), '42B': int(1.9e6), '840B': int(2.2e6), '2B': int(1.2e6)}
-    total = sizes[args.glove_corpus]
-    word2vec_dict = {}
-    with open(glove_path, 'r', encoding='utf-8') as fh:
-        for line in tqdm(fh, total=total):
-            array = line.lstrip().rstrip().split(" ")
-            word = array[0]
-            vector = list(map(float, array[1:]))
-            if word in word_counter:
-                word2vec_dict[word] = vector
-            elif word.capitalize() in word_counter:
-                word2vec_dict[word.capitalize()] = vector
-            elif word.lower() in word_counter:
-                word2vec_dict[word.lower()] = vector
-            elif word.upper() in word_counter:
-                word2vec_dict[word.upper()] = vector
-
-    print("{}/{} of word vocab have corresponding vectors in {}".format(len(word2vec_dict), len(word_counter), glove_path))
-    return word2vec_dict
+# def get_word2vec(args, word_counter):
+#     glove_path = os.path.join(args.glove_dir, "glove.{}.{}d.txt".format(args.glove_corpus, args.glove_vec_size))
+#     sizes = {'6B': int(4e5), '42B': int(1.9e6), '840B': int(2.2e6), '2B': int(1.2e6)}
+#     total = sizes[args.glove_corpus]
+#     word2vec_dict = {}
+#     with open(glove_path, 'r', encoding='utf-8') as fh:
+#         for line in tqdm(fh, total=total):
+#             array = line.lstrip().rstrip().split(" ")
+#             word = array[0]
+#             vector = list(map(float, array[1:]))
+#             if word in word_counter:
+#                 word2vec_dict[word] = vector
+#             elif word.capitalize() in word_counter:
+#                 word2vec_dict[word.capitalize()] = vector
+#             elif word.lower() in word_counter:
+#                 word2vec_dict[word.lower()] = vector
+#             elif word.upper() in word_counter:
+#                 word2vec_dict[word.upper()] = vector
+#
+#     print("{}/{} of word vocab have corresponding vectors in {}".format(len(word2vec_dict), len(word_counter), glove_path))
+#     return word2vec_dict
 
 
 def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="default", in_path=None):
@@ -150,7 +148,7 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
         cx.append(cxp) # cx: [[[[[
         p.append(pp) # p: [["context string", ""]]
 
-        context = article['abstract']
+        context = article['passage']
 
         if isinstance(context, list):
             xi = [context]
@@ -171,8 +169,8 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
 
         for xij in xi:
             for xijk in xij:
-                word_counter[xijk] += 1
-                lower_word_counter[xijk.lower()] += 1
+                # word_counter[xijk] += 1
+                # lower_word_counter[xijk.lower()] += 1
                 for xijkl in xijk:
                     char_counter[xijkl] += 1
 
@@ -190,7 +188,7 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
             answers.append(answer_text)
             # TODO : put some function that gives word_start, word_stop here
             yi0 = (0, answer['start_position']) # keyphrase first word word index
-            yi1 = (0, answer['end_position'] + 1) # keyphrase last word word index
+            yi1 = (0, answer['end_position']) # keyphrase last word word index
 
             assert len(xi[yi0[0]]) > yi0[1]
             assert len(xi[yi1[0]]) >= yi1[1]
@@ -205,22 +203,36 @@ def prepro_each(args, data_type, start_ratio=0.0, stop_ratio=1.0, out_name="defa
         cy.append(cyi) # cy: [[[
         rx.append(rxi) # 用于指定当前位置answer对应share中的哪个context  rx: [[
         rcx.append(rxi) # 作用同上 rcx: [[
-        ids.append(md5(c.encode('utf8')).hexdigest()[-24:]) # ids: [
+        ids.append(article['id']) # ids: [
+        # ids.append(md5(c.encode('utf8')).hexdigest()[-24:]) # ids: [
         idxs.append(len(idxs)) # idxs: [
         answerss.append(answers) # answer strings answerss: [["answer string", ""]]
 
         if args.debug:
             break
 
-    word2vec_dict = get_word2vec(args, word_counter)
-    lower_word2vec_dict = get_word2vec(args, lower_word_counter)
+    with open(os.path.join(args.source_dir, 'vocab.json')) as f:
+        vocab = json.load(f)
+        # word2vec_dict = vocab['word2vec']
+        # lower_word2vec_dict = word2vec_dict
+        word_counter = vocab['word2count']
+        lower_word_counter = word_counter
+
+    # word2vec_dict = get_word2vec(args, word_counter)
+    # lower_word2vec_dict = get_word2vec(args, lower_word_counter)
 
     # add context here
     data = {'y': y, '*x': rx, '*cx': rcx, 'cy': cy,
             'idxs': idxs, 'ids': ids, 'answerss': answerss, '*p': rx}
     shared = {'x': x, 'cx': cx, 'p': p,
-              'word_counter': word_counter, 'char_counter': char_counter, 'lower_word_counter': lower_word_counter,
-              'word2vec': word2vec_dict, 'lower_word2vec': lower_word2vec_dict}
+              'word_counter': word_counter,
+              'char_counter': char_counter,
+              'lower_word_counter': lower_word_counter,
+              # 'word2vec': word2vec_dict,
+              # 'lower_word2vec': lower_word2vec_dict,
+              'word2idx': vocab['word2idx'],
+              'idx2vec': vocab['idx2vec']
+              }
 
     print("saving ...")
     save(args, data, shared, out_name)

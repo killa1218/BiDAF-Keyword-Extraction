@@ -192,52 +192,56 @@ def read_data(config, data_type, ref, data_filter=None):
 
     shared_path = config.shared_path or os.path.join(config.out_dir, "shared.json")
     if not ref:
-        word2vec_dict = shared['lower_word2vec'] if config.lower_word else shared['word2vec']
-        word_counter = shared['lower_word_counter'] if config.lower_word else shared['word_counter']
+        # word2vec_dict = shared['lower_word2vec'] if config.lower_word else shared['word2vec']
+        # word_counter = shared['lower_word_counter'] if config.lower_word else shared['word_counter']
         char_counter = shared['char_counter']
         special_chars = {"-NULL-": 0,
                          "-UNK-": 1,
                          "-EOS-": 2,
                          "-NEXT-": 3,
                          }
-        if config.finetune:
-            shared['word2idx'] = {word: idx + len(special_chars) for idx, word in
-                                  enumerate(word for word, count in word_counter.items()
-                                            if count > config.word_count_th or (config.known_if_glove and word in word2vec_dict))}
-        else:
-            assert config.known_if_glove
-            assert config.use_glove_for_unk
-            shared['word2idx'] = {word: idx + len(special_chars) for idx, word in
-                                  enumerate(word for word, count in word_counter.items()
-                                            if count > config.word_count_th and word not in word2vec_dict)}
+        special_words = {"-NULL-": 0,
+                         "-UNK-": 1,
+                         }
+        # if config.finetune:
+        #     shared['word2idx'] = {word: idx + len(special_chars) for idx, word in
+        #                           enumerate(word for word, count in word_counter.items()
+        #                                     if count > config.word_count_th or (config.known_if_glove and word in word2vec_dict))}
+        # else:
+        #     assert config.known_if_glove
+        #     assert config.use_glove_for_unk
+        #     shared['word2idx'] = {word: idx + len(special_chars) for idx, word in
+        #                           enumerate(word for word, count in word_counter.items()
+        #                                     if count > config.word_count_th and word not in word2vec_dict)}
         shared['char2idx'] = {char: idx + len(special_chars) for idx, char in
                               enumerate(char for char, count in char_counter.items()
                                         if count > config.char_count_th)}
         for c, idx in special_chars.items():
-            shared['word2idx'][c] = idx
             shared['char2idx'][c] = idx
+        for c, idx in special_words.items():
+            shared['word2idx'][c] = idx
 
         json.dump({'word2idx': shared['word2idx'], 'char2idx': shared['char2idx']}, open(shared_path, 'w'))
     else:
         new_shared = json.load(open(shared_path, 'r'))
         for key, val in new_shared.items():
             shared[key] = val
-    config.eos_symbol = shared['word2idx']["-EOS-"]
-    config.next_symbol = shared['word2idx']["-NEXT-"]
+    # config.eos_symbol = shared['word2idx']["-EOS-"]
+    # config.next_symbol = shared['word2idx']["-NEXT-"]
 
-    if config.use_glove_for_unk:
-        # create new word2idx and word2vec
-        word2vec_dict = shared['lower_word2vec'] if config.lower_word else shared['word2vec']
-        new_word2idx_dict = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['word2idx'])}
-        shared['new_word2idx'] = new_word2idx_dict
-        offset = len(shared['word2idx'])
-        word2vec_dict = shared['lower_word2vec'] if config.lower_word else shared['word2vec']
-        new_word2idx_dict = shared['new_word2idx']
-        idx2vec_dict = {idx: word2vec_dict[word] for word, idx in new_word2idx_dict.items()}
-        # print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
-        new_emb_mat = np.array([idx2vec_dict[idx] for idx in range(len(idx2vec_dict))], dtype='float32')
-        shared['new_emb_mat'] = new_emb_mat
-        print("new_emb_size: ", len(new_emb_mat))
+    # if config.use_glove_for_unk:
+    #     # create new word2idx and word2vec
+    #     word2vec_dict = shared['lower_word2vec'] if config.lower_word else shared['word2vec']
+    #     new_word2idx_dict = {word: idx for idx, word in enumerate(word for word in word2vec_dict.keys() if word not in shared['word2idx'])}
+    #     shared['new_word2idx'] = new_word2idx_dict
+    #     offset = len(shared['word2idx'])
+    #     word2vec_dict = shared['lower_word2vec'] if config.lower_word else shared['word2vec']
+    #     new_word2idx_dict = shared['new_word2idx']
+    #     idx2vec_dict = {idx: word2vec_dict[word] for word, idx in new_word2idx_dict.items()}
+    #     # print("{}/{} unique words have corresponding glove vectors.".format(len(idx2vec_dict), len(word2idx_dict)))
+    #     new_emb_mat = np.array([idx2vec_dict[idx] for idx in range(len(idx2vec_dict))], dtype='float32')
+    #     shared['new_emb_mat'] = new_emb_mat
+    #     print("new_emb_size: ", len(new_emb_mat))
     print("word2idx emb size: ", len(shared['word2idx']), ", max idx:", max(shared['word2idx'].values()))
 
     data_set = DataSet(data, data_type, shared=shared, valid_idxs=valid_idxs)
@@ -324,7 +328,7 @@ def update_config(config, data_sets):
     config.max_word_size = min(config.max_word_size, config.word_size_th)
 
     config.char_vocab_size = len(data_sets[0].shared['char2idx'])
-    config.word_emb_size = len(next(iter(data_sets[0].shared['word2vec'].values())))
+    config.word_emb_size = len(data_sets[0].shared['idx2vec'][0])
     config.word_vocab_size = len(data_sets[0].shared['word2idx'])
 
     if config.single:
