@@ -257,7 +257,7 @@ class F1Evaluator(LabeledEvaluator):
 
     def match(self, true_span, pred_span, percent = 1):
         if percent == 1:
-            return true_span == pred_span
+            return tuple(true_span[0]) == tuple(pred_span[0]) and tuple(true_span[1]) == tuple(pred_span[1])
         else:
             s1 = true_span[0][1]
             e1 = true_span[1][1]
