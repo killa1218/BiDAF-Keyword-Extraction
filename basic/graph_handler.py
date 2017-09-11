@@ -9,7 +9,18 @@ from basic.evaluator import Evaluation, F1Evaluation
 from my.utils import short_floats
 
 import pickle
+import numpy
 
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, numpy.integer):
+            return int(obj)
+        elif isinstance(obj, numpy.floating):
+            return float(obj)
+        elif isinstance(obj, numpy.ndarray):
+            return obj.tolist()
+        else:
+            return super(NumpyEncoder, self).default(obj)
 
 class GraphHandler(object):
     def __init__(self, config, model):
@@ -75,5 +86,5 @@ class GraphHandler(object):
         assert isinstance(e, Evaluation)
         path = path or os.path.join(self.config.answer_dir, "{}-{}.json".format(e.data_type, str(e.global_step).zfill(6)))
         with open(path, 'w') as fh:
-            json.dump(e.id2answer_dict, fh)
+            json.dump(e.id2answer_dict, fh, cls = NumpyEncoder)
 
