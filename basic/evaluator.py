@@ -365,7 +365,7 @@ class F1Evaluator(LabeledEvaluator):
             id2answer_dict['na'] = id2na_dict
         correct = [self.__class__.compare2(yi, span) for yi, span in zip(y, spans)]
         preci = totalRight / totalPred
-        recall = totalRight / totalGroundTruth
+        recall = totalRight / totalGroundTruth if totalRight / totalGroundTruth < 1 else 1
         f1s = [2*preci*recall/(preci + recall + 0.000000001)]
         tensor_dict = dict(zip(self.tensor_dict.keys(), vals)) # Calculated tensor_dict value
         e = F1Evaluation(data_set.data_type, int(global_step), idxs, yp.tolist(), yp2.tolist(), y,
