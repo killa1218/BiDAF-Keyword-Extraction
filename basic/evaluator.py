@@ -312,7 +312,10 @@ class F1Evaluator(LabeledEvaluator):
         # else:
         #     spans, scores = zip(*[get_best_span(ypi, yp2i) for ypi, yp2i in zip(yp, yp2)]) # yp and yp2: [N, M, JX]
 
-        batch_spans_and_scores = [get_best_n_span_without_overlap(ypi, yp2i, self.config.n) for ypi, yp2i in zip(yp, yp2)]
+        if self.config.overlap:
+            batch_spans_and_scores = [get_best_n_span_with_overlap(ypi, yp2i, self.config.n) for ypi, yp2i in zip(yp, yp2)]
+        else:
+            batch_spans_and_scores = [get_best_n_span_without_overlap(ypi, yp2i, self.config.n) for ypi, yp2i in zip(yp, yp2)]
 
         spans = []
         scores = []
