@@ -73,6 +73,7 @@ flags.DEFINE_bool("dump_answer", True, "dump answer? [True]")
 flags.DEFINE_bool("vis", False, "output visualization numbers? [False]")
 flags.DEFINE_bool("dump_pickle", True, "Dump pickle instead of json? [True]")
 flags.DEFINE_float("decay", 0.9, "Exponential moving average decay for logging values [0.9]")
+flags.DEFINE_float("f1_percent", 1, "Exponential moving average decay for logging values [0.9]")
 
 # Thresholds for speed and less memory usage
 flags.DEFINE_integer("word_count_th", 10, "word count th [100]")
@@ -83,6 +84,7 @@ flags.DEFINE_integer("ques_size_th", 30, "ques size th [32]")
 flags.DEFINE_integer("word_size_th", 16, "word size th [16]")
 flags.DEFINE_integer("para_size_th", 256, "para size th [256]")
 flags.DEFINE_integer("max_data_num", None, "max number of training data [None]")
+flags.DEFINE_integer("n", 5, "k")
 
 # Advanced training options
 flags.DEFINE_bool("lower_word", True, "lower word [True]")

@@ -120,11 +120,32 @@ def get_best_span(ypi, yp2i):
                 max_val = val1 * val2
     return ((best_sent_idx, best_word_span[0]), (best_sent_idx, best_word_span[1] + 1)), float(max_val)
 
-def get_best_n_span(ypi, yp2i, n):
+def get_best_n_span_with_overlap(ypi, yp2i, n):
     pairs = get_span_score_pairs(ypi, yp2i)
     pairs.sort(key = lambda x: x[1], reverse = True)
 
     return pairs[:n]
+
+def get_best_n_span_without_overlap(ypi, yp2i, n):
+    import numpy as np
+
+    pairs = []
+    for f, (ypif, yp2if) in enumerate(zip(ypi, yp2i)):
+        for _ in range(n):
+            maxidxypi = np.argmax(ypif)
+            maxidxyp2i = np.argmax(yp2if[maxidxypi:]) + maxidxypi
+
+            pairs.append(
+                (
+                    ((f, maxidxypi), (f, maxidxyp2i + 1)),
+                    ypif[maxidxypi] * yp2if[maxidxyp2i]
+                )
+            )
+
+            ypif[maxidxypi] = -10000
+            yp2if[maxidxyp2i] = -10000
+
+    return pairs
 
 def get_best_span_wy(wypi, th):
     chunk_spans = []

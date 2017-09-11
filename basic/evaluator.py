@@ -5,7 +5,7 @@ from basic.read_data import DataSet
 from my.nltk_utils import span_f1
 from my.tensorflow import padded_reshape
 from my.utils import argmax
-from squad.utils import get_phrase, get_best_span, get_best_span_wy
+from squad.utils import get_phrase, get_best_span, get_best_span_wy, get_best_n_span_with_overlap, get_best_n_span_without_overlap
 
 
 class Evaluation(object):
@@ -200,11 +200,15 @@ class ForwardEvaluation(Evaluation):
 
 
 class F1Evaluation(AccuracyEvaluation):
-    def __init__(self, data_type, global_step, idxs, yp, yp2, y, correct, loss, f1s, id2answer_dict, tensor_dict=None):
+    def __init__(self, data_type, global_step, idxs, yp, yp2, y, correct, loss, precisions, recalls, f1s, id2answer_dict, tensor_dict=None):
         super(F1Evaluation, self).__init__(data_type, global_step, idxs, yp, y, correct, loss, tensor_dict=tensor_dict)
         self.yp2 = yp2
         self.f1s = f1s
+        self.precisions = precisions
+        self.recalls = recalls
         self.f1 = float(np.mean(f1s))
+        self.precision = np.mean(precisions)
+        self.recall = np.mean(recalls)
         self.dict['yp2'] = yp2
         self.dict['f1s'] = f1s
         self.dict['f1'] = self.f1
@@ -223,6 +227,8 @@ class F1Evaluation(AccuracyEvaluation):
         new_y = self.y + other.y
         new_correct = self.correct + other.correct
         new_f1s = self.f1s + other.f1s
+        new_precisions = self.precisions + other.precisions
+        new_recalls = self.recalls + other.recalls
         new_loss = (self.loss * self.num_examples + other.loss * other.num_examples) / len(new_correct)
         new_id2answer_dict = dict(list(self.id2answer_dict.items()) + list(other.id2answer_dict.items()))
         new_id2score_dict = dict(list(self.id2answer_dict['scores'].items()) + list(other.id2answer_dict['scores'].items()))
@@ -230,14 +236,14 @@ class F1Evaluation(AccuracyEvaluation):
         if 'na' in self.id2answer_dict:
             new_id2na_dict = dict(list(self.id2answer_dict['na'].items()) + list(other.id2answer_dict['na'].items()))
             new_id2answer_dict['na'] = new_id2na_dict
-        e = F1Evaluation(self.data_type, self.global_step, new_idxs, new_yp, new_yp2, new_y, new_correct, new_loss, new_f1s, new_id2answer_dict)
+        e = F1Evaluation(self.data_type, self.global_step, new_idxs, new_yp, new_yp2, new_y, new_correct, new_loss, new_precisions, new_recalls, new_f1s, new_id2answer_dict)
         if 'wyp' in self.dict:
             new_wyp = self.dict['wyp'] + other.dict['wyp']
             e.dict['wyp'] = new_wyp
         return e
 
     def __repr__(self):
-        return "{} step {}: accuracy={:.4f}, f1={:.4f}, loss={:.4f}".format(self.data_type, self.global_step, self.acc, self.f1, self.loss)
+        return "{} step {}: accuracy={:.4f}, precision={:.4f}, recall={:.4f}, f1={:.4f}, loss={:.4f}".format(self.data_type, self.global_step, self.acc, self.precision, self.recall ,self.f1, self.loss)
 
 
 class F1Evaluator(LabeledEvaluator):
@@ -248,6 +254,25 @@ class F1Evaluator(LabeledEvaluator):
         self.loss = model.loss
         if config.na:
             self.na = model.na_prob
+
+    def match(self, true_span, pred_span, percent = 1):
+        if percent == 1:
+            return true_span == pred_span
+        else:
+            s1 = true_span[0][1]
+            e1 = true_span[1][1]
+
+            s2 = pred_span[0][1]
+            e2 = pred_span[1][1]
+
+            if s2 >= e1 or e2 <= s1:
+                return False
+            elif s1 <= s2:
+                overlap = min(e1, e2) - s2
+            else:
+                overlap = min(e1, e2) - s1
+
+            return overlap/(e1 - s1) >= percent
 
     def get_evaluation(self, sess, batch):
         idxs, data_set = self._split_batch(batch)
@@ -282,10 +307,35 @@ class F1Evaluator(LabeledEvaluator):
             y = new_y
 
         yp, yp2, wyp = yp[:data_set.num_examples], yp2[:data_set.num_examples], wyp[:data_set.num_examples]
-        if self.config.wy:
-            spans, scores = zip(*[get_best_span_wy(wypi, self.config.th) for wypi in wyp])
-        else:
-            spans, scores = zip(*[get_best_span(ypi, yp2i) for ypi, yp2i in zip(yp, yp2)]) # yp and yp2: [N, M, JX]
+        # if self.config.wy:
+        #     spans, scores = zip(*[get_best_span_wy(wypi, self.config.th) for wypi in wyp])
+        # else:
+        #     spans, scores = zip(*[get_best_span(ypi, yp2i) for ypi, yp2i in zip(yp, yp2)]) # yp and yp2: [N, M, JX]
+
+        batch_spans_and_scores = [get_best_n_span_without_overlap(ypi, yp2i, self.config.n) for ypi, yp2i in zip(yp, yp2)]
+
+        spans = []
+        scores = []
+
+        totalRight = 0
+        totalPred = 0
+        totalGroundTruth = 0
+        for i in range(len(y)):
+            yi = y[i]
+            totalGroundTruth += len(yi)
+            spans_and_scores = batch_spans_and_scores[i]
+
+            spanarr = []
+            scorearr = []
+            for span, score in spans_and_scores:
+                spanarr.append(span)
+                scorearr.append(score)
+                totalPred += 1
+                for yii in yi:
+                    if self.match(yii, span, self.config.f1_percent):
+                        totalRight += 1
+            spans.append(spanarr)
+            scores.append(scorearr)
 
         def _get(xi, span):
             if len(xi) <= span[0][0]:
@@ -301,7 +351,7 @@ class F1Evaluator(LabeledEvaluator):
                 return ""
             return get_phrase(context, xi, span)
 
-        id2answer_dict = {id_: _get2(context, xi, span)
+        id2answer_dict = {id_: [_get2(context, xi, sp) for sp in span]
                           for id_, xi, span, context in zip(data_set.data['ids'], data_set.data['x'], spans, data_set.data['p'])
                           } # {id: String(keyphrase)}
         id2score_dict = {id_: score for id_, score in zip(data_set.data['ids'], scores)} # {id: Float(product softmax prob)}
@@ -311,10 +361,12 @@ class F1Evaluator(LabeledEvaluator):
             id2na_dict = {id_: float(each) for id_, each in zip(data_set.data['ids'], na)}
             id2answer_dict['na'] = id2na_dict
         correct = [self.__class__.compare2(yi, span) for yi, span in zip(y, spans)]
-        f1s = [self.__class__.span_f1(yi, span) for yi, span in zip(y, spans)]
+        preci = totalRight / totalPred
+        recall = totalRight / totalGroundTruth
+        f1s = [2*preci*recall/(preci + recall + 0.000000001)]
         tensor_dict = dict(zip(self.tensor_dict.keys(), vals)) # Calculated tensor_dict value
         e = F1Evaluation(data_set.data_type, int(global_step), idxs, yp.tolist(), yp2.tolist(), y,
-                         correct, float(loss), f1s, id2answer_dict, tensor_dict=tensor_dict)
+                         correct, float(loss), [preci], [recall], f1s, id2answer_dict, tensor_dict=tensor_dict)
         if self.config.wy:
             e.dict['wyp'] = wyp.tolist()
         return e
@@ -336,10 +388,11 @@ class F1Evaluator(LabeledEvaluator):
         return False
 
     @staticmethod
-    def compare2(yi, span):
+    def compare2(yi, spans):
         for start, stop in yi: # For each keyphrase in ground truth
-            if tuple(start) == span[0] and tuple(stop) == span[1]:
-                return True
+            for span in spans:
+                if tuple(start) == span[0] and tuple(stop) == span[1]:
+                    return True
         return False
 
     @staticmethod
