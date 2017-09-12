@@ -255,8 +255,8 @@ class F1Evaluator(LabeledEvaluator):
         if config.na:
             self.na = model.na_prob
 
-    def match(self, true_span, pred_span, percent = 1):
-        if percent == 1:
+    def match(self, true_span, pred_span, percent = 1, tolerate = 5):
+        if percent == 0:
             return tuple(true_span[0]) == tuple(pred_span[0]) and tuple(true_span[1]) == tuple(pred_span[1])
         else:
             s1 = true_span[0][1]
@@ -265,7 +265,7 @@ class F1Evaluator(LabeledEvaluator):
             s2 = pred_span[0][1]
             e2 = pred_span[1][1]
 
-            if s2 >= e1 or e2 <= s1:
+            if s2 >= e1 or e2 <= s1 or e2 - s2 > tolerate:
                 return False
             elif s1 <= s2:
                 overlap = min(e1, e2) - s2
